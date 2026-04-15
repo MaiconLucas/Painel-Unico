@@ -19,32 +19,56 @@ async function jiraFetch(path: string) {
   return res.json()
 }
 
+// Converte ADF para texto plano preservando quebras de linha entre nós
 function extractText(description: any): string {
   if (!description) return ''
   if (typeof description === 'string') return description
-  const walk = (node: any): string => {
+
+  function walk(node: any): string {
     if (!node) return ''
     if (node.type === 'text') return node.text || ''
     if (node.type === 'hardBreak') return '\n'
-    if (node.content) return node.content.map(walk).join(node.type === 'paragraph' ? '\n' : '')
-    return ''
+
+    const children = (node.content || []).map(walk)
+
+    // Blocos que devem ter quebra de linha após
+    const blockTypes = ['paragraph', 'heading', 'listItem', 'bulletList', 'orderedList', 'blockquote']
+    if (blockTypes.includes(node.type)) {
+      return children.join('') + '\n'
+    }
+
+    return children.join('')
   }
+
   return walk(description)
 }
 
 function parseDescription(desc: string) {
-  const scoreMatch = desc.match(/score de complexidade[^:\d]*:?\s*\*?\*?\s*(\d+)/i)
+  // Score: linha com "Score de complexidade: X pts"
+  const scoreMatch = desc.match(/score de complexidade[^:\d]*:?\s*(\d+)/i)
   const score = scoreMatch ? parseInt(scoreMatch[1]) : null
 
-  const servBlockMatch = desc.match(/servi[çc]os contratados[^\n]*\n([\s\S]*?)(?:\n\*\*[A-Z]|\n\n\*\*|$)/i)
+  // Plano: linha com "Plano: X"
+  const planoMatch = desc.match(/plano[*:\s]+([^\n]+)/i)
+  const plano = planoMatch ? planoMatch[1].replace(/\*/g, '').trim() : null
+
+  // Serviços: pegar só as linhas de bullet após "Serviços contratados"
+  // A descrição ADF vira: "Serviços contratados:\nImplantação\nConsultoria\n..."
+  const servStart = desc.search(/servi[çc]os contratados/i)
   let services: string | null = null
-  if (servBlockMatch) {
-    const items = [...servBlockMatch[1].matchAll(/[*\-•]\s*([^\n*]+)/g)].map(m => m[1].trim()).filter(Boolean)
+
+  if (servStart !== -1) {
+    const afterServ = desc.slice(servStart)
+    const lines = afterServ.split('\n').slice(1) // pula a linha do título
+    const items: string[] = []
+    for (const line of lines) {
+      const clean = line.replace(/\*/g, '').trim()
+      // Para quando bate numa nova seção em negrito ou linha vazia seguida de seção
+      if (!clean || clean.toLowerCase().includes('porte') || clean.toLowerCase().includes('agentes') || clean.toLowerCase().includes('localidades') || clean.toLowerCase().includes('score') || clean.toLowerCase().includes('implantador') || clean.toLowerCase().includes('instância') || clean.toLowerCase().includes('técnico')) break
+      items.push(clean)
+    }
     if (items.length > 0) services = items.join(' · ')
   }
-
-  const planoMatch = desc.match(/plano[*:\s]+([^\n*]+)/i)
-  const plano = planoMatch ? planoMatch[1].trim() : null
 
   return { score, services, plano }
 }
@@ -69,7 +93,7 @@ export async function GET(request: Request) {
     const clients = await Promise.all(epics.map(async (epic: any) => {
       let tasks: any[] = []
       try {
-        const taskJql = encodeURIComponent(`project=${PROJECT_KAN} AND issuetype=Tarefa AND parent="${epic.key}"`)
+        const taskJql = encodeURIComponent(`project=${PROJECT_KAN} AND issuetype=Tarefa AND parent="${epic.key}" AND status!="Concluído"`)
         const tasksData = await jiraFetch(
           `/search/jql?jql=${taskJql}&maxResults=50&fields=summary,status,assignee`
         )
@@ -169,8 +193,6 @@ export async function GET(request: Request) {
     const pendingTasksByAssignee: Record<string, any[]> = {}
     clients.forEach(epic => {
       epic.tasks.forEach((task: any) => {
-        const s = task.status.toLowerCase()
-        if (s.includes('conclu')) return
         const responsible = task.assignee || epic.assignee || 'Sem responsável'
         if (!pendingTasksByAssignee[responsible]) pendingTasksByAssignee[responsible] = []
         pendingTasksByAssignee[responsible].push({

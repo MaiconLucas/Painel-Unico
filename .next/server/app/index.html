@@ -1,0 +1,71 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="/_next/static/css/57c98ddc6de02726.css" data-precedence="next"/><link rel="preload" as="script" fetchPriority="low" href="/_next/static/chunks/webpack-879f858537244e02.js"/><script src="/_next/static/chunks/fd9d1056-1f4c605cebad2e8d.js" async=""></script><script src="/_next/static/chunks/23-4c76addb86867c5e.js" async=""></script><script src="/_next/static/chunks/main-app-27d23a59f6a0caa3.js" async=""></script><script src="/_next/static/chunks/app/page-c4737dca50de2990.js" async=""></script><title>Painel de Implantação — Único</title><meta name="description" content="Visão operacional das implantações ativas"/><script src="/_next/static/chunks/polyfills-78c92fac7aa8fdd8.js" noModule=""></script></head><body><style>
+        :root {
+          --c-bg: #f5f5f3;
+          --c-surface: #ffffff;
+          --c-border: #e8e8e4;
+          --c-text: #1a1a1a;
+          --c-muted: #888880;
+          --c-ok: #2d7a3a;
+          --c-ok-bg: #e8f5eb;
+          --c-warn: #8a5c00;
+          --c-warn-bg: #fdf3d7;
+          --c-err: #c0392b;
+          --c-err-bg: #fdecea;
+          --c-blue: #1a56db;
+          --c-blue-bg: #ebf0ff;
+          --c-accent: #1a1a1a;
+        }
+        @media (prefers-color-scheme: dark) {
+          :root {
+            --c-bg: #111110;
+            --c-surface: #1c1c1a;
+            --c-border: #2e2e2b;
+            --c-text: #f0f0ec;
+            --c-muted: #666660;
+            --c-ok: #4caf6a;
+            --c-ok-bg: #0f2d18;
+            --c-warn: #d4a012;
+            --c-warn-bg: #2a2000;
+            --c-err: #e05c4a;
+            --c-err-bg: #2a0f0a;
+            --c-blue: #5b8ef0;
+            --c-blue-bg: #0d1a3a;
+            --c-accent: #f0f0ec;
+          }
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: var(--c-bg); color: var(--c-text); font-family: -apple-system, BlinkMacSystemFont, &#x27;Segoe UI&#x27;, sans-serif; font-size: 14px; }
+        .card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; padding: 14px 16px; margin-bottom: 8px; transition: border-color 0.15s; }
+        .card:hover { border-color: var(--c-muted); }
+        .chip { font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 500; white-space: nowrap; border: none; cursor: pointer; transition: opacity 0.15s; }
+        .chip:hover { opacity: 0.75; }
+        .chip-done { background: var(--c-ok-bg); color: var(--c-ok); }
+        .chip-active { background: var(--c-blue-bg); color: var(--c-blue); }
+        .chip-waiting { background: var(--c-warn-bg); color: var(--c-warn); }
+        .chip-todo { background: var(--c-border); color: var(--c-muted); }
+        .badge { font-size: 11px; padding: 3px 9px; border-radius: 20px; font-weight: 500; white-space: nowrap; }
+        .badge.ok { background: var(--c-ok-bg); color: var(--c-ok); }
+        .badge.warn { background: var(--c-warn-bg); color: var(--c-warn); }
+        .badge.err { background: var(--c-err-bg); color: var(--c-err); }
+        .badge.info { background: var(--c-blue-bg); color: var(--c-blue); }
+        .meta { font-size: 11px; color: var(--c-muted); background: var(--c-bg); border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+        .link-btn { background: none; border: none; cursor: pointer; color: var(--c-text); font-family: inherit; font-size: inherit; font-weight: inherit; padding: 0; }
+        .link-btn:hover { text-decoration: underline; }
+        .filter-btn { font-size: 12px; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--c-border); background: transparent; color: var(--c-muted); cursor: pointer; transition: all 0.15s; }
+        .filter-btn:hover { border-color: var(--c-muted); color: var(--c-text); }
+        .filter-btn.on { background: var(--c-surface); color: var(--c-text); border-color: var(--c-text); font-weight: 600; }
+        .tab-btn { font-size: 13px; padding: 8px 16px; border: none; background: transparent; color: var(--c-muted); cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; transition: all 0.15s; }
+        .tab-btn.on { color: var(--c-text); border-bottom-color: var(--c-text); }
+        .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+        .dot-done { background: var(--c-ok); }
+        .dot-active { background: var(--c-blue); }
+        .dot-waiting { background: var(--c-warn); }
+        .dot-todo { background: var(--c-muted); }
+        .stat { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; padding: 14px 16px; }
+        .section-label { font-size: 11px; font-weight: 700; color: var(--c-muted); text-transform: uppercase; letter-spacing: 0.07em; padding-bottom: 8px; border-bottom: 1px solid var(--c-border); margin-bottom: 10px; }
+        .prod-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+        .done-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--c-border); }
+        .done-row:last-child { border-bottom: none; }
+        select { font-size: 13px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text); cursor: pointer; outline: none; }
+        select:focus { border-color: var(--c-muted); }
+      </style><div style="max-width:760px;margin:0 auto;padding:28px 16px"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px"><div><h1 style="font-size:22px;font-weight:700;letter-spacing:-0.02em">Painel Único</h1></div><button class="filter-btn" disabled="" style="font-weight:500">...</button></div><div style="display:grid;grid-template-columns:repeat(5, 1fr);gap:8px;margin-bottom:24px"><div class="stat"><p style="font-size:10px;color:var(--c-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Implantações</p><p style="font-size:22px;font-weight:700;color:var(--c-text)">—</p></div><div class="stat"><p style="font-size:10px;color:var(--c-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Serv. Adicionais</p><p style="font-size:22px;font-weight:700;color:var(--c-text)">—</p></div><div class="stat"><p style="font-size:10px;color:var(--c-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Atrasados</p><p style="font-size:22px;font-weight:700;color:var(--c-err)">—</p></div><div class="stat"><p style="font-size:10px;color:var(--c-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Aguardando</p><p style="font-size:22px;font-weight:700;color:var(--c-warn)">—</p></div><div class="stat"><p style="font-size:10px;color:var(--c-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">No prazo</p><p style="font-size:22px;font-weight:700;color:var(--c-ok)">—</p></div></div><div style="display:flex;border-bottom:1px solid var(--c-border);margin-bottom:16px"><button class="tab-btn on">Implantações (<!-- -->0<!-- -->)</button><button class="tab-btn ">Serv. Adicionais (<!-- -->0<!-- -->)</button><button class="tab-btn ">Produção</button></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px"><button class="filter-btn on">Todos</button><button class="filter-btn ">Atrasados</button><button class="filter-btn ">Aguardando</button></div><div style="text-align:center;padding:3rem 0;color:var(--c-muted);font-size:13px">Consultando Jira...</div></div><script src="/_next/static/chunks/webpack-879f858537244e02.js" async=""></script><script>(self.__next_f=self.__next_f||[]).push([0]);self.__next_f.push([2,null])</script><script>self.__next_f.push([1,"1:HL[\"/_next/static/css/57c98ddc6de02726.css\",\"style\"]\n"])</script><script>self.__next_f.push([1,"2:I[5751,[],\"\"]\n4:I[6513,[],\"ClientPageRoot\"]\n5:I[8212,[\"931\",\"static/chunks/app/page-c4737dca50de2990.js\"],\"default\"]\n6:I[9275,[],\"\"]\n7:I[1343,[],\"\"]\n9:I[6130,[],\"\"]\na:[]\n0:[[[\"$\",\"link\",\"0\",{\"rel\":\"stylesheet\",\"href\":\"/_next/static/css/57c98ddc6de02726.css\",\"precedence\":\"next\",\"crossOrigin\":\"$undefined\"}]],[\"$\",\"$L2\",null,{\"buildId\":\"5VejQnoIxcwFN8DTf3kTJ\",\"assetPrefix\":\"\",\"initialCanonicalUrl\":\"/\",\"initialTree\":[\"\",{\"children\":[\"__PAGE__\",{}]},\"$undefined\",\"$undefined\",true],\"initialSeedData\":[\"\",{\"children\":[\"__PAGE__\",{},[[\"$L3\",[\"$\",\"$L4\",null,{\"props\":{\"params\":{},\"searchParams\":{}},\"Component\":\"$5\"}]],null],null]},[[\"$\",\"html\",null,{\"lang\":\"pt-BR\",\"children\":[\"$\",\"body\",null,{\"children\":[\"$\",\"$L6\",null,{\"parallelRouterKey\":\"children\",\"segmentPath\":[\"children\"],\"error\":\"$undefined\",\"errorStyles\":\"$undefined\",\"errorScripts\":\"$undefined\",\"template\":[\"$\",\"$L7\",null,{}],\"templateStyles\":\"$undefined\",\"templateScripts\":\"$undefined\",\"notFound\":[[\"$\",\"title\",null,{\"children\":\"404: This page could not be found.\"}],[\"$\",\"div\",null,{\"style\":{\"fontFamily\":\"system-ui,\\\"Segoe UI\\\",Roboto,Helvetica,Arial,sans-serif,\\\"Apple Color Emoji\\\",\\\"Segoe UI Emoji\\\"\",\"height\":\"100vh\",\"textAlign\":\"center\",\"display\":\"flex\",\"flexDirection\":\"column\",\"alignItems\":\"center\",\"justifyContent\":\"center\"},\"children\":[\"$\",\"div\",null,{\"children\":[[\"$\",\"style\",null,{\"dangerouslySetInnerHTML\":{\"__html\":\"body{color:#000;background:#fff;margin:0}.next-error-h1{border-right:1px solid rgba(0,0,0,.3)}@media (prefers-color-scheme:dark){body{color:#fff;background:#000}.next-error-h1{border-right:1px solid rgba(255,255,255,.3)}}\"}}],[\"$\",\"h1\",null,{\"className\":\"next-error-h1\",\"style\":{\"display\":\"inline-block\",\"margin\":\"0 20px 0 0\",\"padding\":\"0 23px 0 0\",\"fontSize\":24,\"fontWeight\":500,\"verticalAlign\":\"top\",\"lineHeight\":\"49px\"},\"children\":\"404\"}],[\"$\",\"div\",null,{\"style\":{\"display\":\"inline-block\"},\"children\":[\"$\",\"h2\",null,{\"style\":{\"fontSize\":14,\"fontWeight\":400,\"lineHeight\":\"49px\",\"margin\":0},\"children\":\"This page could not be found.\"}]}]]}]}]],\"notFoundS"])</script><script>self.__next_f.push([1,"tyles\":[],\"styles\":null}]}]}],null],null],\"couldBeIntercepted\":false,\"initialHead\":[false,\"$L8\"],\"globalErrorComponent\":\"$9\",\"missingSlots\":\"$Wa\"}]]\n"])</script><script>self.__next_f.push([1,"8:[[\"$\",\"meta\",\"0\",{\"name\":\"viewport\",\"content\":\"width=device-width, initial-scale=1\"}],[\"$\",\"meta\",\"1\",{\"charSet\":\"utf-8\"}],[\"$\",\"title\",\"2\",{\"children\":\"Painel de Implantação — Único\"}],[\"$\",\"meta\",\"3\",{\"name\":\"description\",\"content\":\"Visão operacional das implantações ativas\"}]]\n3:null\n"])</script></body></html>
