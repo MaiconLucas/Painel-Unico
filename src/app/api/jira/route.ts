@@ -123,7 +123,7 @@ function calcStageAlert(tasks: any[], epicCreatedAt: string) {
 
   // Encontra o SLA do serviço
   const serviceKey = flow.find(f => currentTask.summary?.toLowerCase().includes(f.toLowerCase()))
-  const serviceConfig = services.find(s => s.key === serviceKey)
+  const serviceConfig = services.find((s: any) => s.key === serviceKey)
 
   let alert: string
   let alertReason: string
