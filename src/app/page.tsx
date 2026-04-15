@@ -15,8 +15,6 @@ type Task = {
   summary: string
   status: string
   assignee?: string | null
-  epicKey?: string
-  epicName?: string
 }
 
 type Issue = {
@@ -58,22 +56,19 @@ function StatusDot({ status }: { status: string }) {
   return <span className={`dot dot-${statusClass(status)}`} title={status} />
 }
 
+// Pipeline mostra apenas tasks pendentes (concluídas já vêm filtradas da API)
 function Pipeline({ tasks }: { tasks: Task[] }) {
-  const ordered = TASK_ORDER.map(t => tasks.find(tk => tk.summary?.includes(t))).filter(Boolean) as Task[]
+  const ordered = TASK_ORDER
+    .map(t => tasks.find(tk => tk.summary?.includes(t)))
+    .filter(Boolean) as Task[]
   const free = tasks.filter(tk => !TASK_ORDER.some(t => tk.summary?.includes(t)))
   const all = [...ordered, ...free]
-  let foundActive = false
 
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 10 }}>
       {all.map((tk, i) => {
         const s = tk.status.toLowerCase()
-        const isDone = s.includes('conclu')
-        const isActive = s.includes('andamento')
-        if (isActive) foundActive = true
-        const isNext = !foundActive && !isDone
-        if (isNext) foundActive = true
-        const cls = isDone ? 'done' : isActive ? 'active' : s.includes('aguardando') ? 'waiting' : isNext ? 'active' : 'todo'
+        const cls = s.includes('andamento') ? 'active' : s.includes('aguardando') ? 'waiting' : 'todo'
         const label = tk.summary.replace(/.*?[-–]\s*/, '').trim().split(' ').slice(0, 3).join(' ')
         return (
           <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
@@ -88,7 +83,7 @@ function Pipeline({ tasks }: { tasks: Task[] }) {
           </span>
         )
       })}
-      {all.length === 0 && <span style={{ fontSize: 12, color: 'var(--c-muted)' }}>Sem tasks</span>}
+      {all.length === 0 && <span style={{ fontSize: 12, color: 'var(--c-muted)' }}>Sem tasks pendentes</span>}
     </div>
   )
 }
@@ -102,27 +97,28 @@ function StatusBadge({ issue }: { issue: Issue }) {
 
 function IssueCard({ issue }: { issue: Issue }) {
   const [expanded, setExpanded] = useState(false)
-  const pending = issue.tasks.filter(t => !t.status.toLowerCase().includes('conclu'))
-  const instancia = issue.name.split(/[-–—]\s*/)[1]?.trim() || ''
 
   return (
     <div className="card">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Título completo igual ao Jira */}
           <button
             onClick={() => openJira(issue.key)}
             className="link-btn"
-            style={{ fontSize: 13, fontWeight: 600, textAlign: 'left', display: 'block', width: '100%' }}
+            style={{ fontSize: 13, fontWeight: 600, textAlign: 'left', lineHeight: 1.4 }}
           >
-            {instancia || issue.name}
+            {issue.name}
           </button>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 5, alignItems: 'center' }}>
             <span className="meta">{issue.key}</span>
             {issue.score && <span className="meta">{issue.score} pts</span>}
             {issue.plano && <span className="meta">{issue.plano}</span>}
           </div>
           {issue.services && (
-            <p style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 4, lineHeight: 1.5 }}>{issue.services}</p>
+            <p style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 5, lineHeight: 1.6 }}>
+              {issue.services}
+            </p>
           )}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
@@ -130,32 +126,30 @@ function IssueCard({ issue }: { issue: Issue }) {
           {issue.project === 'KAN' && issue.tasks.length > 0 && (
             <button
               onClick={() => setExpanded(v => !v)}
-              className="meta"
-              style={{ cursor: 'pointer', background: 'none', border: 'none', padding: 0, color: 'var(--c-muted)' }}
+              style={{ fontSize: 11, color: 'var(--c-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
             >
-              {expanded ? '▲' : '▼'} {pending.length > 0 ? `${pending.length} pendente(s)` : 'ver tasks'}
+              {expanded ? '▲' : '▼'} {issue.tasks.length} task(s)
             </button>
           )}
         </div>
       </div>
 
+      {/* Pipeline de tasks pendentes */}
       {issue.project === 'KAN' && <Pipeline tasks={issue.tasks} />}
 
-      {expanded && (
+      {/* Expansão detalhada */}
+      {expanded && issue.tasks.length > 0 && (
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--c-border)' }}>
-          {pending.length === 0
-            ? <p style={{ fontSize: 12, color: 'var(--c-muted)' }}>Todas as tasks concluídas.</p>
-            : pending.map(task => (
-              <div key={task.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: '1px solid var(--c-border)' }}>
-                <StatusDot status={task.status} />
-                <button onClick={() => openJira(task.key)} className="link-btn" style={{ fontSize: 12, flex: 1, textAlign: 'left' }}>
-                  {task.summary.replace(/.*?[-–]\s*/, '')}
-                </button>
-                <span className="meta">{task.status}</span>
-                {task.assignee && <span className="meta">{task.assignee.split(' ')[0]}</span>}
-              </div>
-            ))
-          }
+          {issue.tasks.map(task => (
+            <div key={task.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: '1px solid var(--c-border)' }}>
+              <StatusDot status={task.status} />
+              <button onClick={() => openJira(task.key)} className="link-btn" style={{ fontSize: 12, flex: 1, textAlign: 'left' }}>
+                {task.summary.replace(/.*?[-–]\s*/, '').trim()}
+              </button>
+              <span className="meta">{task.status}</span>
+              {task.assignee && <span className="meta">{task.assignee.split(' ')[0]}</span>}
+            </div>
+          ))}
         </div>
       )}
 
@@ -239,11 +233,11 @@ export default function Page() {
   })
 
   const allImplantadores = Array.from(new Set([
-    ...Object.keys(pendingByAssignee),
-    ...doneTasks.map(t => t.assignee || 'Sem responsável'),
-    ...doneSa.map(t => t.assignee || 'Sem responsável'),
     ...implantadores,
-  ])).filter(n => n !== 'Sem responsável')
+    ...Object.keys(pendingByAssignee),
+    ...doneTasks.map(t => t.assignee || ''),
+    ...doneSa.map(t => t.assignee || ''),
+  ])).filter(n => n && n !== 'Sem responsável')
 
   return (
     <>
@@ -253,16 +247,11 @@ export default function Page() {
           --c-surface: #ffffff;
           --c-border: #e8e8e4;
           --c-text: #1a1a1a;
-          --c-muted: #888880;
-          --c-ok: #2d7a3a;
-          --c-ok-bg: #e8f5eb;
-          --c-warn: #8a5c00;
-          --c-warn-bg: #fdf3d7;
-          --c-err: #c0392b;
-          --c-err-bg: #fdecea;
-          --c-blue: #1a56db;
-          --c-blue-bg: #ebf0ff;
-          --c-accent: #1a1a1a;
+          --c-muted: #88887a;
+          --c-ok: #2d7a3a; --c-ok-bg: #e8f5eb;
+          --c-warn: #8a5c00; --c-warn-bg: #fdf3d7;
+          --c-err: #c0392b; --c-err-bg: #fdecea;
+          --c-blue: #1a56db; --c-blue-bg: #ebf0ff;
         }
         @media (prefers-color-scheme: dark) {
           :root {
@@ -270,34 +259,29 @@ export default function Page() {
             --c-surface: #1c1c1a;
             --c-border: #2e2e2b;
             --c-text: #f0f0ec;
-            --c-muted: #666660;
-            --c-ok: #4caf6a;
-            --c-ok-bg: #0f2d18;
-            --c-warn: #d4a012;
-            --c-warn-bg: #2a2000;
-            --c-err: #e05c4a;
-            --c-err-bg: #2a0f0a;
-            --c-blue: #5b8ef0;
-            --c-blue-bg: #0d1a3a;
-            --c-accent: #f0f0ec;
+            --c-muted: #66665e;
+            --c-ok: #4caf6a; --c-ok-bg: #0f2d18;
+            --c-warn: #d4a012; --c-warn-bg: #2a2000;
+            --c-err: #e05c4a; --c-err-bg: #2a0f0a;
+            --c-blue: #5b8ef0; --c-blue-bg: #0d1a3a;
           }
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: var(--c-bg); color: var(--c-text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
+        body { background: var(--c-bg); color: var(--c-text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.5; }
         .card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; padding: 14px 16px; margin-bottom: 8px; transition: border-color 0.15s; }
         .card:hover { border-color: var(--c-muted); }
         .chip { font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 500; white-space: nowrap; border: none; cursor: pointer; transition: opacity 0.15s; }
-        .chip:hover { opacity: 0.75; }
-        .chip-done { background: var(--c-ok-bg); color: var(--c-ok); }
+        .chip:hover { opacity: 0.7; }
         .chip-active { background: var(--c-blue-bg); color: var(--c-blue); }
         .chip-waiting { background: var(--c-warn-bg); color: var(--c-warn); }
         .chip-todo { background: var(--c-border); color: var(--c-muted); }
-        .badge { font-size: 11px; padding: 3px 9px; border-radius: 20px; font-weight: 500; white-space: nowrap; }
+        .badge { font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 500; white-space: nowrap; }
         .badge.ok { background: var(--c-ok-bg); color: var(--c-ok); }
         .badge.warn { background: var(--c-warn-bg); color: var(--c-warn); }
         .badge.err { background: var(--c-err-bg); color: var(--c-err); }
         .badge.info { background: var(--c-blue-bg); color: var(--c-blue); }
-        .meta { font-size: 11px; color: var(--c-muted); background: var(--c-bg); border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+        .badge.neutral { background: var(--c-border); color: var(--c-muted); }
+        .meta { font-size: 11px; color: var(--c-muted); background: var(--c-bg); border-radius: 4px; padding: 1px 6px; white-space: nowrap; display: inline-block; }
         .link-btn { background: none; border: none; cursor: pointer; color: var(--c-text); font-family: inherit; font-size: inherit; font-weight: inherit; padding: 0; }
         .link-btn:hover { text-decoration: underline; }
         .filter-btn { font-size: 12px; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--c-border); background: transparent; color: var(--c-muted); cursor: pointer; transition: all 0.15s; }
@@ -305,18 +289,20 @@ export default function Page() {
         .filter-btn.on { background: var(--c-surface); color: var(--c-text); border-color: var(--c-text); font-weight: 600; }
         .tab-btn { font-size: 13px; padding: 8px 16px; border: none; background: transparent; color: var(--c-muted); cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; transition: all 0.15s; }
         .tab-btn.on { color: var(--c-text); border-bottom-color: var(--c-text); }
-        .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+        .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
         .dot-done { background: var(--c-ok); }
         .dot-active { background: var(--c-blue); }
         .dot-waiting { background: var(--c-warn); }
         .dot-todo { background: var(--c-muted); }
         .stat { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; padding: 14px 16px; }
-        .section-label { font-size: 11px; font-weight: 700; color: var(--c-muted); text-transform: uppercase; letter-spacing: 0.07em; padding-bottom: 8px; border-bottom: 1px solid var(--c-border); margin-bottom: 10px; }
-        .prod-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; padding: 16px; margin-bottom: 12px; }
-        .done-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--c-border); }
-        .done-row:last-child { border-bottom: none; }
+        .section-label { font-size: 11px; font-weight: 700; color: var(--c-muted); text-transform: uppercase; letter-spacing: 0.07em; }
+        .prod-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; overflow: hidden; margin-bottom: 12px; }
+        .prod-header { padding: 16px; border-bottom: 1px solid var(--c-border); display: flex; justify-content: space-between; align-items: center; }
+        .prod-section { padding: 12px 16px; }
+        .prod-section + .prod-section { border-top: 1px solid var(--c-border); }
+        .done-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+        .done-row + .done-row { border-top: 1px solid var(--c-border); }
         select { font-size: 13px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text); cursor: pointer; outline: none; }
-        select:focus { border-color: var(--c-muted); }
       `}</style>
 
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 16px' }}>
@@ -348,7 +334,7 @@ export default function Page() {
             { label: 'No prazo', value: summary.ok, color: 'var(--c-ok)' },
           ].map(m => (
             <div key={m.label} className="stat">
-              <p style={{ fontSize: 10, color: 'var(--c-muted)', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{m.label}</p>
+              <p style={{ fontSize: 10, color: 'var(--c-muted)', marginBottom: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{m.label}</p>
               <p style={{ fontSize: 22, fontWeight: 700, color: m.color || 'var(--c-text)' }}>{loading ? '—' : m.value}</p>
             </div>
           ))}
@@ -367,7 +353,7 @@ export default function Page() {
           </button>
         </div>
 
-        {/* Filtros KAN */}
+        {/* Filtros */}
         {tab === 'KAN' && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
             {['todos', 'atrasado', 'aguardando', ...implantadores].map(f => (
@@ -377,8 +363,6 @@ export default function Page() {
             ))}
           </div>
         )}
-
-        {/* Filtros SA */}
         {tab === 'SA' && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
             {['todos', 'atrasado', 'aguardando'].map(f => (
@@ -388,8 +372,6 @@ export default function Page() {
             ))}
           </div>
         )}
-
-        {/* Período Produção */}
         {tab === 'PRODUCAO' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <span style={{ fontSize: 13, color: 'var(--c-muted)' }}>Período:</span>
@@ -402,118 +384,114 @@ export default function Page() {
           </div>
         )}
 
-        {loading && (
-          <div style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--c-muted)', fontSize: 13 }}>
-            Consultando Jira...
-          </div>
-        )}
+        {loading && <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--c-muted)', fontSize: 13 }}>Consultando Jira...</div>}
 
         {/* KAN */}
         {!loading && tab === 'KAN' && (
-          <>
-            {filteredKAN.length === 0
-              ? <p style={{ textAlign: 'center', color: 'var(--c-muted)', padding: '3rem' }}>Nenhum cliente encontrado.</p>
-              : Object.entries(byImpl).map(([impl, cls]) => (
-                <div key={impl} style={{ marginBottom: 28 }}>
-                  <div className="section-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>{impl}</span>
-                    <span>{cls.length} cliente(s)</span>
-                  </div>
-                  {cls.map(c => <IssueCard key={c.key} issue={c} />)}
+          filteredKAN.length === 0
+            ? <p style={{ textAlign: 'center', color: 'var(--c-muted)', padding: '3rem' }}>Nenhum cliente encontrado.</p>
+            : Object.entries(byImpl).map(([impl, cls]) => (
+              <div key={impl} style={{ marginBottom: 28 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid var(--c-border)' }}>
+                  <span className="section-label">{impl}</span>
+                  <span className="section-label">{cls.length} cliente(s)</span>
                 </div>
-              ))
-            }
-          </>
+                {cls.map(c => <IssueCard key={c.key} issue={c} />)}
+              </div>
+            ))
         )}
 
         {/* SA */}
         {!loading && tab === 'SA' && (
-          <>
-            {filteredSA.length === 0
-              ? <p style={{ textAlign: 'center', color: 'var(--c-muted)', padding: '3rem' }}>Nenhum serviço encontrado.</p>
-              : filteredSA.map(i => <IssueCard key={i.key} issue={i} />)
-            }
-          </>
+          filteredSA.length === 0
+            ? <p style={{ textAlign: 'center', color: 'var(--c-muted)', padding: '3rem' }}>Nenhum serviço encontrado.</p>
+            : filteredSA.map(i => <IssueCard key={i.key} issue={i} />)
         )}
 
         {/* Produção */}
         {!loading && tab === 'PRODUCAO' && (
-          <>
-            {allImplantadores.length === 0
-              ? <p style={{ textAlign: 'center', color: 'var(--c-muted)', padding: '3rem' }}>Nenhum dado para este período.</p>
-              : allImplantadores.map(impl => {
-                const pending = pendingByAssignee[impl] || []
-                const doneKAN = doneTasks.filter(t => t.assignee === impl)
-                const doneSaImpl = doneSa.filter(t => t.assignee === impl)
-                const activeClients = clients.filter(c => c.assignee === impl)
-                const total = doneKAN.length + doneSaImpl.length
+          allImplantadores.length === 0
+            ? <p style={{ textAlign: 'center', color: 'var(--c-muted)', padding: '3rem' }}>Nenhum dado para este período.</p>
+            : allImplantadores.map(impl => {
+              const pending = pendingByAssignee[impl] || []
+              const doneKAN = doneTasks.filter(t => t.assignee === impl)
+              const doneSaImpl = doneSa.filter(t => t.assignee === impl)
+              const activeClients = clients.filter(c => c.assignee === impl)
+              const totalEntregas = doneKAN.length + doneSaImpl.length
 
-                return (
-                  <div key={impl} className="prod-card">
-                    {/* Cabeçalho do implantador */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                      <div>
-                        <p style={{ fontWeight: 700, fontSize: 15 }}>{impl.split(' ')[0]}</p>
-                        <p style={{ fontSize: 12, color: 'var(--c-muted)', marginTop: 2 }}>{activeClients.length} cliente(s) ativo(s)</p>
-                      </div>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <span className="badge info">{pending.length} pendente(s)</span>
-                        <span className="badge ok">{total} entrega(s)</span>
-                      </div>
+              return (
+                <div key={impl} className="prod-card">
+                  {/* Header do implantador */}
+                  <div className="prod-header">
+                    <div>
+                      <p style={{ fontWeight: 700, fontSize: 15 }}>{impl}</p>
+                      <p style={{ fontSize: 12, color: 'var(--c-muted)', marginTop: 3 }}>
+                        {activeClients.length} cliente(s) ativo(s)
+                      </p>
                     </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <span className="badge neutral">{pending.length} pendente(s)</span>
+                      <span className="badge ok">{doneKAN.length} task(s) KAN</span>
+                      <span className="badge ok">{doneSaImpl.length} serviço(s) SA</span>
+                      <span className="badge info">{totalEntregas} total</span>
+                    </div>
+                  </div>
 
-                    {/* Tasks pendentes */}
-                    {pending.length > 0 && (
-                      <div style={{ borderTop: '1px solid var(--c-border)', paddingTop: 12, marginTop: 4 }}>
-                        <p className="section-label">Tasks pendentes</p>
-                        {pending.map((task: any) => (
-                          <div key={task.key} className="done-row">
-                            <StatusDot status={task.status} />
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <button onClick={() => openJira(task.key)} className="link-btn" style={{ fontSize: 12, display: 'block', width: '100%', textAlign: 'left' }}>
-                                {task.summary.replace(/.*?[-–]\s*/, '')}
-                              </button>
-                              <button onClick={() => openJira(task.epicKey)} className="link-btn" style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 1 }}>
-                                {task.epicName?.split(/[-–—]\s*/)[1]?.trim() || task.epicName}
-                              </button>
-                            </div>
-                            <span className="meta">{task.status}</span>
+                  {/* Tasks pendentes */}
+                  {pending.length > 0 && (
+                    <div className="prod-section">
+                      <p className="section-label" style={{ marginBottom: 10 }}>Tasks pendentes</p>
+                      {pending.map((task: any) => (
+                        <div key={task.key} className="done-row">
+                          <StatusDot status={task.status} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <button onClick={() => openJira(task.key)} className="link-btn" style={{ fontSize: 12, display: 'block', textAlign: 'left' }}>
+                              {task.summary.replace(/.*?[-–]\s*/, '').trim()}
+                            </button>
+                            <button onClick={() => openJira(task.epicKey)} className="link-btn" style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 1, display: 'block', textAlign: 'left' }}>
+                              {task.epicName}
+                            </button>
                           </div>
-                        ))}
-                      </div>
-                    )}
+                          <span className="meta">{task.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-                    {/* Concluídos no período */}
-                    {(doneKAN.length > 0 || doneSaImpl.length > 0) && (
-                      <div style={{ borderTop: '1px solid var(--c-border)', paddingTop: 12, marginTop: pending.length > 0 ? 12 : 4 }}>
-                        <p className="section-label">Concluído em {MONTH_NAMES[periodMonth - 1]}/{periodYear}</p>
-                        {[...doneKAN.map(t => ({ ...t, proj: 'KAN' })), ...doneSaImpl.map(t => ({ ...t, proj: 'SA' }))].map(task => (
-                          <div key={task.key} className="done-row">
-                            <span className={`chip chip-done`} style={{ fontSize: 10 }}>{task.proj}</span>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <button onClick={() => openJira(task.key)} className="link-btn" style={{ fontSize: 12, display: 'block', textAlign: 'left' }}>
-                                {task.summary.replace(/.*?[-–]\s*/, '')}
+                  {/* Concluídos no período */}
+                  {totalEntregas > 0 && (
+                    <div className="prod-section">
+                      <p className="section-label" style={{ marginBottom: 10 }}>
+                        Concluído em {MONTH_NAMES[periodMonth - 1]}/{periodYear}
+                      </p>
+                      {[
+                        ...doneKAN.map(t => ({ ...t, proj: 'KAN' })),
+                        ...doneSaImpl.map(t => ({ ...t, proj: 'SA' })),
+                      ].sort((a, b) => (b.resolvedAt || '').localeCompare(a.resolvedAt || '')).map(task => (
+                        <div key={task.key} className="done-row">
+                          <span className={`badge ${task.proj === 'KAN' ? 'info' : 'ok'}`} style={{ fontSize: 10, padding: '2px 6px' }}>{task.proj}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <button onClick={() => openJira(task.key)} className="link-btn" style={{ fontSize: 12, display: 'block', textAlign: 'left' }}>
+                              {task.summary.replace(/.*?[-–]\s*/, '').trim()}
+                            </button>
+                            {task.parentName && (
+                              <button onClick={() => openJira(task.parentKey!)} className="link-btn" style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 1, display: 'block', textAlign: 'left' }}>
+                                {task.parentName}
                               </button>
-                              {task.parentName && (
-                                <button onClick={() => openJira(task.parentKey!)} className="link-btn" style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 1 }}>
-                                  {task.parentName.split(/[-–—]\s*/)[1]?.trim() || task.parentName}
-                                </button>
-                              )}
-                            </div>
-                            {task.resolvedAt && (
-                              <span className="meta">
-                                {new Date(task.resolvedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-                              </span>
                             )}
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )
-              })
-            }
-          </>
+                          {task.resolvedAt && (
+                            <span className="meta">
+                              {new Date(task.resolvedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })
         )}
       </div>
     </>

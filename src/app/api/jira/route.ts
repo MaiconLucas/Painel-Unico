@@ -19,7 +19,7 @@ async function jiraFetch(path: string) {
   return res.json()
 }
 
-// Converte ADF para texto plano preservando quebras de linha entre nós
+// Converte ADF para texto plano com quebras de linha corretas
 function extractText(description: any): string {
   if (!description) return ''
   if (typeof description === 'string') return description
@@ -28,46 +28,52 @@ function extractText(description: any): string {
     if (!node) return ''
     if (node.type === 'text') return node.text || ''
     if (node.type === 'hardBreak') return '\n'
-
-    const children = (node.content || []).map(walk)
-
-    // Blocos que devem ter quebra de linha após
-    const blockTypes = ['paragraph', 'heading', 'listItem', 'bulletList', 'orderedList', 'blockquote']
-    if (blockTypes.includes(node.type)) {
-      return children.join('') + '\n'
-    }
-
-    return children.join('')
+    const children = (node.content || []).map(walk).join('')
+    const blockTypes = ['paragraph', 'heading', 'listItem', 'bulletList', 'orderedList']
+    return blockTypes.includes(node.type) ? children + '\n' : children
   }
 
   return walk(description)
 }
 
-function parseDescription(desc: string) {
-  // Score: linha com "Score de complexidade: X pts"
-  const scoreMatch = desc.match(/score de complexidade[^:\d]*:?\s*(\d+)/i)
+function parseDescription(raw: string) {
+  // Normaliza \n literais que alguns Epics antigos têm
+  const desc = raw.replace(/\\n/g, '\n')
+
+  // Score
+  const scoreMatch = desc.match(/(?:score|peso) de complexidade[^:\d]*:?\s*\*?\s*(\d+)/i)
   const score = scoreMatch ? parseInt(scoreMatch[1]) : null
 
-  // Plano: linha com "Plano: X"
+  // Plano (primeira linha real ou campo Plano:)
   const planoMatch = desc.match(/plano[*:\s]+([^\n]+)/i)
   const plano = planoMatch ? planoMatch[1].replace(/\*/g, '').trim() : null
 
-  // Serviços: pegar só as linhas de bullet após "Serviços contratados"
-  // A descrição ADF vira: "Serviços contratados:\nImplantação\nConsultoria\n..."
-  const servStart = desc.search(/servi[çc]os contratados/i)
+  // Serviços — múltiplos formatos:
+  // Formato novo (ADF): "Serviços contratados:\nImplantação\nConsultoria\n..."
+  // Formato antigo (texto): "Serviços: Migração, URA avançada, Consultoria,..."
   let services: string | null = null
 
-  if (servStart !== -1) {
-    const afterServ = desc.slice(servStart)
-    const lines = afterServ.split('\n').slice(1) // pula a linha do título
-    const items: string[] = []
-    for (const line of lines) {
-      const clean = line.replace(/\*/g, '').trim()
-      // Para quando bate numa nova seção em negrito ou linha vazia seguida de seção
-      if (!clean || clean.toLowerCase().includes('porte') || clean.toLowerCase().includes('agentes') || clean.toLowerCase().includes('localidades') || clean.toLowerCase().includes('score') || clean.toLowerCase().includes('implantador') || clean.toLowerCase().includes('instância') || clean.toLowerCase().includes('técnico')) break
-      items.push(clean)
-    }
+  // Tenta formato novo primeiro (lista de bullets após título)
+  const newFmt = desc.match(/servi[çc]os contratados[*:\s]*\n([\s\S]*?)(?:\n\*\*|\nPorte|\nImplantador|\nPeso|\nScore|\nNível|\n\n|$)/i)
+  if (newFmt) {
+    const items = newFmt[1]
+      .split('\n')
+      .map(l => l.replace(/^[*\-•]\s*/, '').replace(/\*/g, '').trim())
+      .filter(l => l.length > 0 && !l.match(/^(porte|agentes|localidades|score|peso|implantador|instância|nível|técnico)/i))
     if (items.length > 0) services = items.join(' · ')
+  }
+
+  // Fallback: formato inline "Serviços: X, Y, Z"
+  if (!services) {
+    const inlineFmt = desc.match(/servi[çc]os?[*:\s]+([^\n]+)/i)
+    if (inlineFmt) {
+      services = inlineFmt[1]
+        .replace(/\*/g, '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s.length > 0 && !s.match(/^(porte|implantador|peso|score)/i))
+        .join(' · ')
+    }
   }
 
   return { score, services, plano }
@@ -93,7 +99,10 @@ export async function GET(request: Request) {
     const clients = await Promise.all(epics.map(async (epic: any) => {
       let tasks: any[] = []
       try {
-        const taskJql = encodeURIComponent(`project=${PROJECT_KAN} AND issuetype=Tarefa AND parent="${epic.key}" AND status!="Concluído"`)
+        // Filtra concluídas direto no JQL
+        const taskJql = encodeURIComponent(
+          `project=${PROJECT_KAN} AND issuetype=Tarefa AND parent="${epic.key}" AND status!="Concluído"`
+        )
         const tasksData = await jiraFetch(
           `/search/jql?jql=${taskJql}&maxResults=50&fields=summary,status,assignee`
         )
@@ -115,7 +124,7 @@ export async function GET(request: Request) {
 
       return {
         key: epic.key,
-        name: epic.fields.summary,
+        name: epic.fields.summary, // título completo, sem modificação
         assignee: epic.fields.assignee?.displayName || null,
         status,
         dueDate: due,
@@ -133,7 +142,7 @@ export async function GET(request: Request) {
     // SA — Issues abertas
     const saJql = encodeURIComponent(`project=${PROJECT_SA} AND status!="Concluído" AND status!="Cancelado"`)
     const saData = await jiraFetch(
-      `/search/jql?jql=${saJql}&maxResults=100&fields=summary,status,assignee,duedate,description`
+      `/search/jql?jql=${saJql}&maxResults=100&fields=summary,status,assignee,duedate`
     )
     const saIssues = (saData.issues || []).map((issue: any) => {
       const status = issue.fields.status?.name || ''
@@ -162,7 +171,7 @@ export async function GET(request: Request) {
       `project=${PROJECT_KAN} AND issuetype=Tarefa AND status="Concluído" AND resolutiondate>="${periodStart}" AND resolutiondate<="${periodEnd}"`
     )
     const doneTasksData = await jiraFetch(
-      `/search/jql?jql=${doneTasksJql}&maxResults=200&fields=summary,status,assignee,parent,resolutiondate`
+      `/search/jql?jql=${doneTasksJql}&maxResults=200&fields=summary,assignee,parent,resolutiondate`
     )
     const doneTasks = (doneTasksData.issues || []).map((t: any) => ({
       key: t.key,
@@ -178,7 +187,7 @@ export async function GET(request: Request) {
       `project=${PROJECT_SA} AND status="Concluído" AND resolutiondate>="${periodStart}" AND resolutiondate<="${periodEnd}"`
     )
     const doneSaData = await jiraFetch(
-      `/search/jql?jql=${doneSaJql}&maxResults=200&fields=summary,status,assignee,resolutiondate`
+      `/search/jql?jql=${doneSaJql}&maxResults=200&fields=summary,assignee,resolutiondate`
     )
     const doneSa = (doneSaData.issues || []).map((t: any) => ({
       key: t.key,
@@ -189,7 +198,7 @@ export async function GET(request: Request) {
       resolvedAt: t.fields.resolutiondate || null,
     }))
 
-    // Tasks pendentes por assignee
+    // Tasks pendentes por assignee (já vem sem concluídas do JQL)
     const pendingTasksByAssignee: Record<string, any[]> = {}
     clients.forEach(epic => {
       epic.tasks.forEach((task: any) => {
@@ -206,8 +215,6 @@ export async function GET(request: Request) {
     })
 
     const allIssues = [...clients, ...saIssues]
-    const total = clients.length
-    const totalSA = saIssues.length
     const atrasados = allIssues.filter((c: any) => c.overdue).length
     const aguardando = allIssues.filter((c: any) => c.waiting).length
     const ok = allIssues.length - atrasados - aguardando
@@ -215,7 +222,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       clients,
       saIssues,
-      summary: { total, totalSA, atrasados, aguardando, ok },
+      summary: { total: clients.length, totalSA: saIssues.length, atrasados, aguardando, ok },
       doneTasks,
       doneSa,
       pendingTasksByAssignee,
