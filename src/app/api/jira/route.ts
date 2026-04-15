@@ -1,10 +1,5 @@
 import { NextResponse } from 'next/server'
-import fs from 'fs'
-import path from 'path'
-
-const slaConfig = JSON.parse(
-  fs.readFileSync(path.join(process.cwd(), 'sla-config.json'), 'utf-8')
-)
+import slaConfig from '@/sla-config.json'
 
 const JIRA_BASE = process.env.JIRA_BASE_URL!
 const EMAIL = process.env.JIRA_EMAIL!
@@ -68,7 +63,6 @@ function parseDescription(raw: string) {
   return { score, services, plano }
 }
 
-// Calcula dias úteis entre duas datas
 function businessDaysBetween(start: Date, end: Date): number {
   let count = 0
   const cur = new Date(start)
@@ -83,56 +77,51 @@ function businessDaysBetween(start: Date, end: Date): number {
   return count
 }
 
-// Determina a etapa atual e o alerta do cliente
 function calcStageAlert(tasks: any[], epicCreatedAt: string) {
   const flow: string[] = slaConfig.flow
   const services = slaConfig.services
   const warningThreshold = slaConfig.alerts.warningThreshold
 
-  // Ordena as tasks no fluxo
   const orderedTasks = flow
     .map(flowKey => tasks.find((t: any) =>
       t.summary?.toLowerCase().includes(flowKey.toLowerCase())
     ))
     .filter(Boolean)
 
-  // Tasks fora do fluxo (CRM, IA, Integração etc)
   const freeTasks = tasks.filter((t: any) =>
     !flow.some(f => t.summary?.toLowerCase().includes(f.toLowerCase()))
   )
 
   const allOrdered = [...orderedTasks, ...freeTasks]
 
-  // Etapa atual = primeira não concluída
   const currentTask = allOrdered.find((t: any) => {
     const s = t.status?.toLowerCase()
     return !s?.includes('conclu')
   })
 
   if (!currentTask) {
-    // Todas concluídas
-    return { stage: null, stageStatus: 'done', daysInStage: 0, alert: 'done', alertReason: 'Todas as etapas concluídas' }
+    return { stage: null, stageStatus: 'done', daysInStage: 0, alert: 'done', alertReason: 'Todas as etapas concluídas', currentTaskKey: undefined }
   }
 
   const taskStatus = currentTask.status?.toLowerCase() || ''
   const isWaitingClient = taskStatus.includes('aguardando')
 
-  // Dias que essa task está nesse status (usa updatedAt ou createdAt da task)
   const since = currentTask.updatedAt || currentTask.createdAt || epicCreatedAt
   const daysInStage = businessDaysBetween(new Date(since), new Date())
 
-  // Encontra o SLA do serviço
   const serviceKey = flow.find(f => currentTask.summary?.toLowerCase().includes(f.toLowerCase()))
   const serviceConfig = services.find((s: any) => s.key === serviceKey)
 
   let alert: string
   let alertReason: string
 
-  if (isWaitingClient) {
+  if (tasks.length === 0) {
+    alert = 'noTasks'
+    alertReason = 'Nenhuma task criada ainda'
+  } else if (isWaitingClient) {
     alert = 'waiting'
     alertReason = `Aguardando cliente há ${daysInStage} dia(s) útil(eis)`
   } else if (!serviceConfig?.slaDays) {
-    // SLA individual ou sem prazo
     if (daysInStage >= 5) {
       alert = 'critical'
       alertReason = `Parado há ${daysInStage} dias úteis (sem SLA definido)`
@@ -156,16 +145,6 @@ function calcStageAlert(tasks: any[], epicCreatedAt: string) {
       alert = 'ok'
       alertReason = `${daysInStage}/${sla} dias úteis`
     }
-  }
-
-  // Se não tem tasks em andamento nem concluídas — Epic parado
-  const hasAnyActive = tasks.some((t: any) => {
-    const s = t.status?.toLowerCase()
-    return s?.includes('andamento') || s?.includes('conclu')
-  })
-  if (!hasAnyActive && tasks.length === 0) {
-    alert = 'noTasks'
-    alertReason = 'Nenhuma task criada ainda'
   }
 
   return {
@@ -200,7 +179,6 @@ export async function GET(request: Request) {
     const clients = await Promise.all(epics.map(async (epic: any) => {
       let tasks: any[] = []
       try {
-        // Busca TODAS as tasks (incluindo concluídas) para calcular etapa corretamente
         const taskJql = encodeURIComponent(
           `project=${PROJECT_KAN} AND issuetype=Tarefa AND parent="${epic.key}"`
         )
@@ -225,10 +203,7 @@ export async function GET(request: Request) {
       const now = new Date()
       const dueDate = due ? new Date(due) : null
 
-      // Calcula tasks pendentes para exibição (sem concluídas)
       const pendingTasks = tasks.filter((t: any) => !t.status?.toLowerCase().includes('conclu'))
-
-      // Calcula etapa atual e alerta
       const stageAlert = calcStageAlert(tasks, epic.fields.created)
 
       return {
@@ -247,7 +222,6 @@ export async function GET(request: Request) {
         nearDeadline: dueDate ? (dueDate.getTime() - now.getTime()) < 86400000 && dueDate > now : false,
         waiting: status.toLowerCase().includes('aguardando'),
         project: 'KAN',
-        // Novos campos de alerta
         stage: stageAlert.stage,
         stageStatus: stageAlert.stageStatus,
         daysInStage: stageAlert.daysInStage,
@@ -279,6 +253,8 @@ export async function GET(request: Request) {
         services: null,
         plano: null,
         tasks: [],
+        allTasksCount: 0,
+        doneTasksCount: 0,
         overdue: dueDate ? dueDate < now : false,
         nearDeadline: dueDate ? (dueDate.getTime() - now.getTime()) < 86400000 && dueDate > now : false,
         waiting: isWaiting,
@@ -287,6 +263,7 @@ export async function GET(request: Request) {
         daysInStage,
         alert: isWaiting ? 'waiting' : daysInStage >= 5 ? 'critical' : daysInStage >= 3 ? 'warning' : 'ok',
         alertReason: isWaiting ? `Aguardando há ${daysInStage} dia(s)` : `${daysInStage} dia(s) nesse status`,
+        currentTaskKey: undefined,
       }
     })
 
@@ -347,19 +324,12 @@ export async function GET(request: Request) {
     return NextResponse.json({
       clients,
       saIssues,
-      summary: {
-        total: clients.length,
-        totalSA: saIssues.length,
-        atrasados,
-        aguardando,
-        alertas,
-        ok,
-      },
+      summary: { total: clients.length, totalSA: saIssues.length, atrasados, aguardando, alertas, ok },
       doneTasks,
       doneSa,
       pendingTasksByAssignee,
       period: { year, month },
-      slaConfig, // Envia config pro frontend
+      slaConfig,
     })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
