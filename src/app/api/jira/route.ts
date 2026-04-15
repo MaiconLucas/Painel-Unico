@@ -19,6 +19,36 @@ async function jiraFetch(path: string) {
   return res.json()
 }
 
+function extractText(description: any): string {
+  if (!description) return ''
+  if (typeof description === 'string') return description
+  const walk = (node: any): string => {
+    if (!node) return ''
+    if (node.type === 'text') return node.text || ''
+    if (node.type === 'hardBreak') return '\n'
+    if (node.content) return node.content.map(walk).join(node.type === 'paragraph' ? '\n' : '')
+    return ''
+  }
+  return walk(description)
+}
+
+function parseDescription(desc: string) {
+  const scoreMatch = desc.match(/score de complexidade[^:\d]*:?\s*\*?\*?\s*(\d+)/i)
+  const score = scoreMatch ? parseInt(scoreMatch[1]) : null
+
+  const servBlockMatch = desc.match(/servi[çc]os contratados[^\n]*\n([\s\S]*?)(?:\n\*\*[A-Z]|\n\n\*\*|$)/i)
+  let services: string | null = null
+  if (servBlockMatch) {
+    const items = [...servBlockMatch[1].matchAll(/[*\-•]\s*([^\n*]+)/g)].map(m => m[1].trim()).filter(Boolean)
+    if (items.length > 0) services = items.join(' · ')
+  }
+
+  const planoMatch = desc.match(/plano[*:\s]+([^\n*]+)/i)
+  const plano = planoMatch ? planoMatch[1].trim() : null
+
+  return { score, services, plano }
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -51,13 +81,9 @@ export async function GET(request: Request) {
         }))
       } catch (_) {}
 
-      const desc: string = epic.fields.description?.content
-        ?.flatMap((b: any) => b.content || [])
-        ?.map((c: any) => c.text || '')
-        ?.join(' ') || ''
+      const desc = extractText(epic.fields.description)
+      const { score, services, plano } = parseDescription(desc)
 
-      const scoreMatch = desc.match(/score[:\s]+(\d+)/i)
-      const servicesMatch = desc.match(/servi[çc]os[:\s]+([^\n]+)/i)
       const due = epic.fields.duedate || null
       const status = epic.fields.status?.name || ''
       const now = new Date()
@@ -69,8 +95,9 @@ export async function GET(request: Request) {
         assignee: epic.fields.assignee?.displayName || null,
         status,
         dueDate: due,
-        score: scoreMatch ? parseInt(scoreMatch[1]) : null,
-        services: servicesMatch ? servicesMatch[1].trim() : null,
+        score,
+        services,
+        plano,
         tasks,
         overdue: dueDate ? dueDate < now : false,
         nearDeadline: dueDate ? (dueDate.getTime() - now.getTime()) < 86400000 && dueDate > now : false,
@@ -97,6 +124,7 @@ export async function GET(request: Request) {
         dueDate: due,
         score: null,
         services: null,
+        plano: null,
         tasks: [],
         overdue: dueDate ? dueDate < now : false,
         nearDeadline: dueDate ? (dueDate.getTime() - now.getTime()) < 86400000 && dueDate > now : false,
@@ -137,7 +165,7 @@ export async function GET(request: Request) {
       resolvedAt: t.fields.resolutiondate || null,
     }))
 
-    // Tasks pendentes por assignee (com nome do Epic pai)
+    // Tasks pendentes por assignee
     const pendingTasksByAssignee: Record<string, any[]> = {}
     clients.forEach(epic => {
       epic.tasks.forEach((task: any) => {
