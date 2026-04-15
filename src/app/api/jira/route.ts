@@ -3,7 +3,8 @@ import { NextResponse } from 'next/server'
 const JIRA_BASE = process.env.JIRA_BASE_URL!
 const EMAIL = process.env.JIRA_EMAIL!
 const TOKEN = process.env.JIRA_API_TOKEN!
-const PROJECT = process.env.JIRA_PROJECT_KEY || 'KAN'
+const PROJECT_KAN = process.env.JIRA_PROJECT_KEY || 'KAN'
+const PROJECT_SA = process.env.JIRA_PROJECT_KEY_SA || 'SA'
 
 const auth = Buffer.from(`${EMAIL}:${TOKEN}`).toString('base64')
 const headers = {
@@ -20,7 +21,8 @@ async function jiraFetch(path: string) {
 
 export async function GET() {
   try {
-    const epicJql = encodeURIComponent(`project=${PROJECT} AND issuetype in ("Épico","Epic","épico") AND status!="Concluído"`)
+    // KAN — Implantações
+    const epicJql = encodeURIComponent(`project=${PROJECT_KAN} AND issuetype in ("Épico","Epic","épico") AND status!="Concluído"`)
     const epicsData = await jiraFetch(
       `/search/jql?jql=${epicJql}&maxResults=100&fields=summary,status,assignee,duedate,description`
     )
@@ -30,7 +32,7 @@ export async function GET() {
     const clients = await Promise.all(epics.map(async (epic: any) => {
       let tasks: any[] = []
       try {
-        const taskJql = encodeURIComponent(`project=${PROJECT} AND issuetype=Tarefa AND parent="${epic.key}"`)
+        const taskJql = encodeURIComponent(`project=${PROJECT_KAN} AND issuetype=Tarefa AND parent="${epic.key}"`)
         const tasksData = await jiraFetch(
           `/search/jql?jql=${taskJql}&maxResults=50&fields=summary,status`
         )
@@ -47,7 +49,6 @@ export async function GET() {
 
       const scoreMatch = desc.match(/score[:\s]+(\d+)/i)
       const servicesMatch = desc.match(/servi[çc]os[:\s]+([^\n]+)/i)
-
       const due = epic.fields.duedate || null
       const status = epic.fields.status?.name || ''
       const now = new Date()
@@ -65,15 +66,49 @@ export async function GET() {
         overdue: dueDate ? dueDate < now : false,
         nearDeadline: dueDate ? (dueDate.getTime() - now.getTime()) < 86400000 && dueDate > now : false,
         waiting: status.toLowerCase().includes('aguardando'),
+        project: 'KAN',
       }
     }))
 
-    const total = clients.length
-    const atrasados = clients.filter((c: any) => c.overdue).length
-    const aguardando = clients.filter((c: any) => c.waiting).length
-    const ok = total - atrasados - aguardando
+    // SA — Serviços Adicionais
+    const saJql = encodeURIComponent(`project=${PROJECT_SA} AND status!="Concluído" AND status!="Cancelado"`)
+    const saData = await jiraFetch(
+      `/search/jql?jql=${saJql}&maxResults=100&fields=summary,status,assignee,duedate,description`
+    )
 
-    return NextResponse.json({ clients, summary: { total, atrasados, aguardando, ok } })
+    const saIssues = (saData.issues || []).map((issue: any) => {
+      const status = issue.fields.status?.name || ''
+      const due = issue.fields.duedate || null
+      const now = new Date()
+      const dueDate = due ? new Date(due) : null
+      return {
+        key: issue.key,
+        name: issue.fields.summary,
+        assignee: issue.fields.assignee?.displayName || null,
+        status,
+        dueDate: due,
+        score: null,
+        services: null,
+        tasks: [],
+        overdue: dueDate ? dueDate < now : false,
+        nearDeadline: dueDate ? (dueDate.getTime() - now.getTime()) < 86400000 && dueDate > now : false,
+        waiting: status.toLowerCase().includes('aguardando'),
+        project: 'SA',
+      }
+    })
+
+    const allIssues = [...clients, ...saIssues]
+    const total = clients.length
+    const totalSA = saIssues.length
+    const atrasados = allIssues.filter((c: any) => c.overdue).length
+    const aguardando = allIssues.filter((c: any) => c.waiting).length
+    const ok = allIssues.length - atrasados - aguardando
+
+    return NextResponse.json({
+      clients,
+      saIssues,
+      summary: { total, totalSA, atrasados, aguardando, ok }
+    })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
