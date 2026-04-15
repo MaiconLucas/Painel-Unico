@@ -1,0 +1,18 @@
+{
+  "services": [
+    { "key": "Site", "label": "Site", "slaDays": 2, "waitClient": false, "individual": false },
+    { "key": "Portfólio", "label": "Portfólio", "slaDays": 2, "waitClient": false, "individual": false },
+    { "key": "Implantação", "label": "Implantação", "slaDays": 1, "waitClient": false, "individual": false },
+    { "key": "Consultoria", "label": "Consultoria", "slaDays": 2, "waitClient": false, "individual": false },
+    { "key": "URA", "label": "URA", "slaDays": 2, "waitClient": false, "individual": false },
+    { "key": "Importação de contatos", "label": "Importação de contatos", "slaDays": null, "waitClient": true, "individual": false },
+    { "key": "Migração", "label": "Migração", "slaDays": null, "waitClient": false, "individual": true },
+    { "key": "CRM", "label": "CRM", "slaDays": null, "waitClient": false, "individual": true },
+    { "key": "Integração", "label": "Integração", "slaDays": null, "waitClient": false, "individual": true },
+    { "key": "IA", "label": "IA", "slaDays": null, "waitClient": false, "individual": true }
+  ],
+  "flow": ["Site", "Portfólio", "Implantação", "Consultoria", "URA", "Importação de contatos", "Migração"],
+  "alerts": {
+    "warningThreshold": 0.75
+  }
+}
