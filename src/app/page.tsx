@@ -123,7 +123,7 @@ export default function Page() {
 
   useEffect(() => { load() }, [load])
 
-  const implantadores = [...new Set(clients.map(c => c.assignee || 'Sem responsável'))]
+  const implantadores = Array.from(new Set(clients.map(c => c.assignee || 'Sem responsável')))
 
   const filteredKAN = clients.filter(c => {
     if (filter === 'atrasado') return c.overdue
