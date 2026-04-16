@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback } from 'react'
 const JIRA_URL = 'https://suporteunico.atlassian.net/browse'
 const TASK_ORDER = ['Site', 'Portfólio', 'Implantação', 'Consultoria', 'URA', 'Importação de contatos', 'Migração']
 const MONTH_NAMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+const ALL_TASK_TYPES = ['Site', 'Portfólio', 'Implantação', 'Consultoria', 'URA', 'Importação de contatos', 'Migração', 'CRM', 'Integração', 'IA']
 
 function openJira(key: string, e?: React.MouseEvent) {
   e?.stopPropagation()
@@ -16,8 +17,6 @@ type Task = {
   summary: string
   status: string
   assignee?: string | null
-  updatedAt?: string | null
-  createdAt?: string | null
 }
 
 type Issue = {
@@ -126,8 +125,19 @@ function alertLabel(alert: string) {
   }
 }
 
-function taskStepName(summary: string) {
-  return summary.replace(/.*?[-–]\s*/, '').trim()
+function getTaskType(summary: string): string {
+  for (const t of ALL_TASK_TYPES) {
+    if (summary?.toLowerCase().includes(t.toLowerCase())) return t
+  }
+  return 'Outros'
+}
+
+function getStatusClass(status: string): 'done' | 'active' | 'waiting' | 'todo' {
+  const s = status.toLowerCase()
+  if (s.includes('conclu')) return 'done'
+  if (s.includes('andamento')) return 'active'
+  if (s.includes('aguardando')) return 'waiting'
+  return 'todo'
 }
 
 // ─── Client Drawer ────────────────────────────────────────────────────────────
@@ -137,42 +147,29 @@ function ClientDrawer({ issue, slaConfig, onClose }: {
   slaConfig: SlaConfig | null
   onClose: () => void
 }) {
-  // Monta timeline completa: fluxo padrão + tasks fora do fluxo
   const flow = slaConfig?.flow || TASK_ORDER
-  const allTasks = issue.tasks  // já vem pendentes; precisamos das concluídas também
 
-  // Reconstrói timeline baseando no que existe nas tasks
   const timelineSteps = flow.map(stepKey => {
-    const task = [...issue.tasks].find(t => t.summary?.toLowerCase().includes(stepKey.toLowerCase()))
-    return { stepKey, task }
-  }).filter(({ stepKey }) => {
-    // Mostra etapa se o serviço foi contratado (task existe) OU se é etapa padrão obrigatória
+    const task = issue.tasks.find(t => t.summary?.toLowerCase().includes(stepKey.toLowerCase()))
     const contracted = issue.services?.toLowerCase().includes(stepKey.toLowerCase())
-    const hasTask = issue.tasks.some(t => t.summary?.toLowerCase().includes(stepKey.toLowerCase()))
-    return contracted || hasTask
-  })
+    const hasTask = !!task
+    return { stepKey, task, show: contracted || hasTask }
+  }).filter(s => s.show)
 
-  // Tasks fora do fluxo (CRM, IA, Integração etc)
   const freeTasks = issue.tasks.filter(t =>
     !flow.some(f => t.summary?.toLowerCase().includes(f.toLowerCase()))
   )
 
-  // Calcula status de cada etapa
   function getStepState(task: Task | undefined): 'done' | 'active' | 'waiting' | 'pending' | 'missing' {
     if (!task) return 'missing'
-    const s = task.status.toLowerCase()
-    if (s.includes('conclu')) return 'done'
-    if (s.includes('andamento')) return 'active'
-    if (s.includes('aguardando')) return 'waiting'
-    return 'pending'
+    return getStatusClass(task.status) as any
   }
 
-  function getStepColor(state: string) {
+  function getStepColors(state: string) {
     switch (state) {
       case 'done':    return { bg: 'var(--c-ok-bg)', color: 'var(--c-ok)', border: 'var(--c-ok)' }
       case 'active':  return { bg: 'var(--c-blue-bg)', color: 'var(--c-blue)', border: 'var(--c-blue)' }
       case 'waiting': return { bg: 'var(--c-warn-bg)', color: 'var(--c-warn)', border: 'var(--c-warn)' }
-      case 'pending': return { bg: 'var(--c-bg)', color: 'var(--c-muted)', border: 'var(--c-border)' }
       default:        return { bg: 'var(--c-bg)', color: 'var(--c-muted)', border: 'var(--c-border)' }
     }
   }
@@ -182,7 +179,6 @@ function ClientDrawer({ issue, slaConfig, onClose }: {
       case 'done':    return '✓'
       case 'active':  return '●'
       case 'waiting': return '⏸'
-      case 'pending': return '○'
       default:        return '○'
     }
   }
@@ -197,10 +193,9 @@ function ClientDrawer({ issue, slaConfig, onClose }: {
     }
   }
 
-  // Encontra próxima etapa
   const nextStep = timelineSteps.find(({ task }) => {
-    const state = getStepState(task)
-    return state === 'pending' || state === 'missing'
+    const s = getStepState(task)
+    return s === 'pending' || s === 'missing'
   })
 
   const progress = issue.allTasksCount > 0
@@ -209,43 +204,29 @@ function ClientDrawer({ issue, slaConfig, onClose }: {
 
   return (
     <>
-      {/* Overlay */}
-      <div
-        onClick={onClose}
-        style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
-          zIndex: 100, backdropFilter: 'blur(2px)',
-          animation: 'fadeIn 0.15s ease',
-        }}
-      />
-
-      {/* Drawer */}
+      <div onClick={onClose} style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+        zIndex: 100, backdropFilter: 'blur(2px)', animation: 'fadeIn 0.15s ease',
+      }} />
       <div style={{
         position: 'fixed', top: 0, right: 0, bottom: 0,
-        width: 'min(520px, 100vw)',
-        background: 'var(--c-surface)',
-        borderLeft: '1px solid var(--c-border)',
-        zIndex: 101, overflowY: 'auto',
-        animation: 'slideIn 0.2s ease',
+        width: 'min(520px, 100vw)', background: 'var(--c-surface)',
+        borderLeft: '1px solid var(--c-border)', zIndex: 101,
+        overflowY: 'auto', animation: 'slideIn 0.2s ease',
         display: 'flex', flexDirection: 'column',
       }}>
-
-        {/* Header do drawer */}
+        {/* Header */}
         <div style={{
           padding: '20px 24px', borderBottom: '1px solid var(--c-border)',
           position: 'sticky', top: 0, background: 'var(--c-surface)', zIndex: 1,
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <button
-                onClick={(e) => openJira(issue.key, e)}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  fontSize: 15, fontWeight: 700, color: 'var(--c-text)',
-                  textAlign: 'left', lineHeight: 1.4, padding: 0,
-                  fontFamily: 'inherit',
-                }}
-              >
+              <button onClick={(e) => openJira(issue.key, e)} style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: 15, fontWeight: 700, color: 'var(--c-text)',
+                textAlign: 'left', lineHeight: 1.4, padding: 0, fontFamily: 'inherit',
+              }}>
                 {issue.name} ↗
               </button>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6, alignItems: 'center' }}>
@@ -256,22 +237,18 @@ function ClientDrawer({ issue, slaConfig, onClose }: {
             </div>
             <button onClick={onClose} style={{
               background: 'none', border: 'none', cursor: 'pointer',
-              fontSize: 20, color: 'var(--c-muted)', padding: '0 4px', lineHeight: 1,
-              flexShrink: 0,
+              fontSize: 20, color: 'var(--c-muted)', padding: '0 4px', lineHeight: 1, flexShrink: 0,
             }}>✕</button>
           </div>
 
-          {/* Saúde geral */}
           <div style={{
             marginTop: 14, padding: '10px 14px', borderRadius: 10,
-            background: alertBg(issue.alert),
-            display: 'flex', alignItems: 'center', gap: 10,
+            background: alertBg(issue.alert), display: 'flex', alignItems: 'center', gap: 10,
           }}>
             <span style={{ fontSize: 20 }}>{alertIcon(issue.alert)}</span>
             <div>
               <p style={{ fontSize: 13, fontWeight: 700, color: alertColor(issue.alert) }}>
-                {alertLabel(issue.alert)}
-                {issue.stage ? ` — ${issue.stage}` : ''}
+                {alertLabel(issue.alert)}{issue.stage ? ` — ${issue.stage}` : ''}
               </p>
               <p style={{ fontSize: 12, color: alertColor(issue.alert), opacity: 0.85, marginTop: 2 }}>
                 {issue.alertReason}
@@ -279,7 +256,6 @@ function ClientDrawer({ issue, slaConfig, onClose }: {
             </div>
           </div>
 
-          {/* Progresso */}
           {issue.allTasksCount > 0 && (
             <div style={{ marginTop: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
@@ -299,8 +275,6 @@ function ClientDrawer({ issue, slaConfig, onClose }: {
 
         {/* Body */}
         <div style={{ padding: '20px 24px', flex: 1 }}>
-
-          {/* Próxima etapa */}
           {nextStep && (
             <div style={{
               marginBottom: 24, padding: '12px 16px',
@@ -310,39 +284,34 @@ function ClientDrawer({ issue, slaConfig, onClose }: {
               <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
                 Próxima etapa
               </p>
-              <p style={{ fontSize: 14, fontWeight: 600 }}>
-                {nextStep.stepKey}
-              </p>
+              <p style={{ fontSize: 14, fontWeight: 600 }}>{nextStep.stepKey}</p>
               <p style={{ fontSize: 12, color: 'var(--c-muted)', marginTop: 2 }}>
                 {nextStep.task ? 'Task criada, aguardando início' : 'Task ainda não criada'}
               </p>
             </div>
           )}
 
-          {/* Timeline */}
           <p className="section-label" style={{ marginBottom: 14 }}>Timeline do cliente</p>
 
           {timelineSteps.length === 0 && (
-            <p style={{ fontSize: 13, color: 'var(--c-muted)' }}>Nenhuma etapa encontrada. Verifique se as tasks foram criadas.</p>
+            <p style={{ fontSize: 13, color: 'var(--c-muted)' }}>Nenhuma etapa encontrada.</p>
           )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {timelineSteps.map(({ stepKey, task }, i) => {
               const state = getStepState(task)
-              const colors = getStepColor(state)
+              const colors = getStepColors(state)
               const isLast = i === timelineSteps.length - 1
               const isCurrent = task?.key === issue.currentTaskKey
 
               return (
                 <div key={stepKey} style={{ display: 'flex', gap: 0 }}>
-                  {/* Linha vertical + círculo */}
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 32, flexShrink: 0 }}>
                     <div style={{
                       width: 28, height: 28, borderRadius: '50%',
                       background: colors.bg, border: `2px solid ${colors.border}`,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 12, fontWeight: 700, color: colors.color,
-                      flexShrink: 0, zIndex: 1,
+                      fontSize: 12, fontWeight: 700, color: colors.color, flexShrink: 0, zIndex: 1,
                       boxShadow: isCurrent ? `0 0 0 3px ${colors.bg}` : 'none',
                     }}>
                       {getStepIcon(state)}
@@ -356,11 +325,7 @@ function ClientDrawer({ issue, slaConfig, onClose }: {
                     )}
                   </div>
 
-                  {/* Conteúdo da etapa */}
-                  <div style={{
-                    flex: 1, paddingLeft: 12, paddingBottom: isLast ? 0 : 20,
-                    paddingTop: 2,
-                  }}>
+                  <div style={{ flex: 1, paddingLeft: 12, paddingBottom: isLast ? 0 : 20, paddingTop: 2 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                       <div>
                         <p style={{
@@ -374,58 +339,31 @@ function ClientDrawer({ issue, slaConfig, onClose }: {
                           {getStepLabel(state)}
                         </p>
                       </div>
-
                       {task && (
-                        <button
-                          onClick={(e) => openJira(task.key, e)}
-                          style={{
-                            fontSize: 10, padding: '2px 8px', borderRadius: 20,
-                            background: 'var(--c-bg)', border: '1px solid var(--c-border)',
-                            color: 'var(--c-muted)', cursor: 'pointer', whiteSpace: 'nowrap',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {task.key} ↗
-                        </button>
+                        <button onClick={(e) => openJira(task.key, e)} style={{
+                          fontSize: 10, padding: '2px 8px', borderRadius: 20,
+                          background: 'var(--c-bg)', border: '1px solid var(--c-border)',
+                          color: 'var(--c-muted)', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                        }}>{task.key} ↗</button>
                       )}
                     </div>
-
-                    {/* Info extra da etapa */}
-                    {task && state === 'active' && (
-                      <div style={{
-                        marginTop: 6, padding: '6px 10px', borderRadius: 6,
-                        background: colors.bg, fontSize: 11, color: colors.color,
-                      }}>
-                        {issue.alertReason}
+                    {task && (state === 'active' || state === 'waiting') && (
+                      <div style={{ marginTop: 6, padding: '6px 10px', borderRadius: 6, background: colors.bg, fontSize: 11, color: colors.color }}>
+                        {state === 'active' ? issue.alertReason : `Aguardando resposta do cliente · ${issue.daysInStage} dia(s)`}
                       </div>
                     )}
-
-                    {task && state === 'waiting' && (
-                      <div style={{
-                        marginTop: 6, padding: '6px 10px', borderRadius: 6,
-                        background: colors.bg, fontSize: 11, color: colors.color,
-                      }}>
-                        Aguardando resposta do cliente · {issue.daysInStage} dia(s)
-                      </div>
-                    )}
-
-                    {!task && state === 'missing' && (
-                      <p style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 4 }}>
-                        Task não criada ainda
-                      </p>
-                    )}
+                    {!task && <p style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 4 }}>Task não criada ainda</p>}
                   </div>
                 </div>
               )
             })}
 
-            {/* Tasks fora do fluxo */}
             {freeTasks.length > 0 && (
               <div style={{ marginTop: 20 }}>
                 <p className="section-label" style={{ marginBottom: 12 }}>Serviços adicionais</p>
                 {freeTasks.map(task => {
                   const state = getStepState(task)
-                  const colors = getStepColor(state)
+                  const colors = getStepColors(state)
                   return (
                     <div key={task.key} style={{
                       display: 'flex', alignItems: 'center', gap: 10,
@@ -434,17 +372,14 @@ function ClientDrawer({ issue, slaConfig, onClose }: {
                     }}>
                       <span style={{ fontSize: 13, color: colors.color }}>{getStepIcon(state)}</span>
                       <div style={{ flex: 1 }}>
-                        <p style={{ fontSize: 13, fontWeight: 600 }}>{taskStepName(task.summary)}</p>
+                        <p style={{ fontSize: 13, fontWeight: 600 }}>{task.summary.replace(/.*?[-–]\s*/, '').trim()}</p>
                         <p style={{ fontSize: 11, color: colors.color, marginTop: 1 }}>{getStepLabel(state)}</p>
                       </div>
-                      <button
-                        onClick={(e) => openJira(task.key, e)}
-                        style={{
-                          fontSize: 10, padding: '2px 8px', borderRadius: 20,
-                          background: 'var(--c-surface)', border: '1px solid var(--c-border)',
-                          color: 'var(--c-muted)', cursor: 'pointer',
-                        }}
-                      >{task.key} ↗</button>
+                      <button onClick={(e) => openJira(task.key, e)} style={{
+                        fontSize: 10, padding: '2px 8px', borderRadius: 20,
+                        background: 'var(--c-surface)', border: '1px solid var(--c-border)',
+                        color: 'var(--c-muted)', cursor: 'pointer',
+                      }}>{task.key} ↗</button>
                     </div>
                   )
                 })}
@@ -452,21 +387,17 @@ function ClientDrawer({ issue, slaConfig, onClose }: {
             )}
           </div>
 
-          {/* Serviços contratados */}
           {issue.services && (
             <div style={{ marginTop: 24 }}>
               <p className="section-label" style={{ marginBottom: 8 }}>Serviços contratados</p>
-              <p style={{ fontSize: 12, color: 'var(--c-muted)', lineHeight: 1.8 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {issue.services.split(' · ').map((s, i) => (
-                  <span key={i}>
-                    <span style={{
-                      display: 'inline-block', padding: '2px 8px', borderRadius: 20,
-                      background: 'var(--c-bg)', border: '1px solid var(--c-border)',
-                      marginRight: 6, marginBottom: 4, fontSize: 11,
-                    }}>{s}</span>
-                  </span>
+                  <span key={i} style={{
+                    padding: '2px 10px', borderRadius: 20,
+                    background: 'var(--c-bg)', border: '1px solid var(--c-border)', fontSize: 11,
+                  }}>{s}</span>
                 ))}
-              </p>
+              </div>
             </div>
           )}
         </div>
@@ -475,7 +406,7 @@ function ClientDrawer({ issue, slaConfig, onClose }: {
   )
 }
 
-// ─── Issue Card (simplificado — detalhe vai pro drawer) ───────────────────────
+// ─── Issue Card ───────────────────────────────────────────────────────────────
 
 function IssueCard({ issue, onOpen }: { issue: Issue, onOpen: () => void }) {
   const progress = issue.allTasksCount > 0
@@ -483,11 +414,7 @@ function IssueCard({ issue, onOpen }: { issue: Issue, onOpen: () => void }) {
     : null
 
   return (
-    <div
-      className="card"
-      onClick={onOpen}
-      style={{ borderLeft: `3px solid ${alertColor(issue.alert)}`, cursor: 'pointer' }}
-    >
+    <div className="card" onClick={onOpen} style={{ borderLeft: `3px solid ${alertColor(issue.alert)}`, cursor: 'pointer' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.4 }}>{issue.name}</p>
@@ -498,8 +425,6 @@ function IssueCard({ issue, onOpen }: { issue: Issue, onOpen: () => void }) {
             <span className="meta">{issue.status}</span>
           </div>
         </div>
-
-        {/* Alert badge */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
           background: alertBg(issue.alert), borderRadius: 8, padding: '5px 10px',
@@ -516,7 +441,6 @@ function IssueCard({ issue, onOpen }: { issue: Issue, onOpen: () => void }) {
         </div>
       </div>
 
-      {/* Barra de progresso */}
       {progress !== null && (
         <div style={{ marginTop: 10, height: 3, background: 'var(--c-border)', borderRadius: 2, overflow: 'hidden' }}>
           <div style={{
@@ -527,57 +451,183 @@ function IssueCard({ issue, onOpen }: { issue: Issue, onOpen: () => void }) {
         </div>
       )}
 
-      <p style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 8 }}>
-        Clique para ver detalhes →
-      </p>
+      <p style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 8 }}>Clique para ver detalhes →</p>
+    </div>
+  )
+}
+
+// ─── Dashboard Tab ────────────────────────────────────────────────────────────
+
+function DashboardTab({ clients }: { clients: Issue[] }) {
+  // Agrega todas as tasks de todos os clientes
+  const allTasks = clients.flatMap(c =>
+    c.tasks.map(t => ({
+      ...t,
+      epicAssignee: c.assignee || 'Sem responsável',
+      epicKey: c.key,
+      type: getTaskType(t.summary),
+    }))
+  )
+
+  // Por tipo de serviço
+  const byType: Record<string, { todo: number, active: number, waiting: number, done: number, total: number }> = {}
+  ALL_TASK_TYPES.forEach(t => { byType[t] = { todo: 0, active: 0, waiting: 0, done: 0, total: 0 } })
+
+  allTasks.forEach(task => {
+    const type = task.type
+    if (!byType[type]) byType[type] = { todo: 0, active: 0, waiting: 0, done: 0, total: 0 }
+    const sc = getStatusClass(task.status)
+    byType[type][sc]++
+    byType[type].total++
+  })
+
+  // Filtra tipos que têm pelo menos 1 task
+  const activeTypes = ALL_TASK_TYPES.filter(t => byType[t]?.total > 0)
+
+  // Por implantador → por tipo
+  const byImpl: Record<string, Record<string, { todo: number, active: number, waiting: number, total: number }>> = {}
+  allTasks.forEach(task => {
+    const impl = task.epicAssignee
+    const type = task.type
+    if (!byImpl[impl]) byImpl[impl] = {}
+    if (!byImpl[impl][type]) byImpl[impl][type] = { todo: 0, active: 0, waiting: 0, total: 0 }
+    const sc = getStatusClass(task.status)
+    if (sc !== 'done') {
+      if (sc === 'active') byImpl[impl][type].active++
+      else if (sc === 'waiting') byImpl[impl][type].waiting++
+      else byImpl[impl][type].todo++
+      byImpl[impl][type].total++
+    }
+  })
+
+  const implantadores = Object.keys(byImpl).sort()
+
+  function StatusBar({ todo, active, waiting, total }: { todo: number, active: number, waiting: number, total: number }) {
+    if (total === 0) return null
+    return (
+      <div style={{ height: 6, background: 'var(--c-border)', borderRadius: 3, overflow: 'hidden', marginTop: 6 }}>
+        <div style={{ display: 'flex', height: '100%' }}>
+          <div style={{ width: `${(active / total) * 100}%`, background: 'var(--c-blue)' }} />
+          <div style={{ width: `${(waiting / total) * 100}%`, background: 'var(--c-warn)' }} />
+          <div style={{ width: `${(todo / total) * 100}%`, background: 'var(--c-border)' }} />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      {/* Por tipo de serviço */}
+      <p className="section-label" style={{ marginBottom: 14 }}>Visão por tipo de serviço</p>
+
+      {activeTypes.length === 0 && (
+        <p style={{ color: 'var(--c-muted)', fontSize: 13 }}>Nenhuma task pendente encontrada.</p>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10, marginBottom: 32 }}>
+        {activeTypes.map(type => {
+          const d = byType[type]
+          return (
+            <div key={type} className="stat" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <p style={{ fontSize: 13, fontWeight: 700 }}>{type}</p>
+                <span style={{ fontSize: 18, fontWeight: 700 }}>{d.total}</span>
+              </div>
+              <StatusBar todo={d.todo} active={d.active} waiting={d.waiting} total={d.total} />
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                {d.active > 0 && (
+                  <span style={{ fontSize: 11, color: 'var(--c-blue)', display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--c-blue)', display: 'inline-block' }} />
+                    {d.active} em andamento
+                  </span>
+                )}
+                {d.waiting > 0 && (
+                  <span style={{ fontSize: 11, color: 'var(--c-warn)', display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--c-warn)', display: 'inline-block' }} />
+                    {d.waiting} aguardando
+                  </span>
+                )}
+                {d.todo > 0 && (
+                  <span style={{ fontSize: 11, color: 'var(--c-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--c-muted)', display: 'inline-block' }} />
+                    {d.todo} a fazer
+                  </span>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Por implantador */}
+      <p className="section-label" style={{ marginBottom: 14 }}>Visão por implantador</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {implantadores.map(impl => {
+          const types = Object.entries(byImpl[impl]).filter(([, d]) => d.total > 0)
+          if (types.length === 0) return null
+          const totalImpl = types.reduce((sum, [, d]) => sum + d.total, 0)
+
+          return (
+            <div key={impl} className="prod-card">
+              <div className="prod-header">
+                <p style={{ fontWeight: 700, fontSize: 14 }}>{impl}</p>
+                <span className="badge neutral">{totalImpl} task(s) pendente(s)</span>
+              </div>
+              <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {types.sort((a, b) => b[1].total - a[1].total).map(([type, d]) => (
+                  <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <p style={{ fontSize: 13, fontWeight: 600, minWidth: 160 }}>{type}</p>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', gap: 1, height: 6, borderRadius: 3, overflow: 'hidden', background: 'var(--c-border)' }}>
+                        <div style={{ width: `${(d.active / d.total) * 100}%`, background: 'var(--c-blue)' }} />
+                        <div style={{ width: `${(d.waiting / d.total) * 100}%`, background: 'var(--c-warn)' }} />
+                        <div style={{ width: `${(d.todo / d.total) * 100}%`, background: 'var(--c-border)' }} />
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      {d.active > 0 && <span className="badge info" style={{ fontSize: 10, padding: '1px 7px' }}>{d.active} and.</span>}
+                      {d.waiting > 0 && <span className="badge warn" style={{ fontSize: 10, padding: '1px 7px' }}>{d.waiting} ag.</span>}
+                      {d.todo > 0 && <span className="badge neutral" style={{ fontSize: 10, padding: '1px 7px' }}>{d.todo} fazer</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
 // ─── SLA Config Tab ───────────────────────────────────────────────────────────
 
-function SlaConfigTab({ config, onSave }: {
-  config: SlaConfig | null
-  onSave: (c: SlaConfig) => Promise<void>
-}) {
+function SlaConfigTab({ config, onSave }: { config: SlaConfig | null, onSave: (c: SlaConfig) => Promise<void> }) {
   const [editing, setEditing] = useState<SlaConfig | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState('')
 
-  useEffect(() => {
-    if (config) setEditing(JSON.parse(JSON.stringify(config)))
-  }, [config])
+  useEffect(() => { if (config) setEditing(JSON.parse(JSON.stringify(config))) }, [config])
 
-  if (!editing) return <p style={{ color: 'var(--c-muted)', fontSize: 13, padding: '2rem' }}>Carregando...</p>
+  if (!editing) return <p style={{ color: 'var(--c-muted)', fontSize: 13 }}>Carregando...</p>
 
   function updateSla(key: string, value: number) {
-    setEditing(prev => {
-      if (!prev) return prev
-      return { ...prev, services: prev.services.map(s => s.key === key ? { ...s, slaDays: value } : s) }
-    })
+    setEditing(prev => prev ? { ...prev, services: prev.services.map(s => s.key === key ? { ...s, slaDays: value } : s) } : prev)
   }
 
   function updateThreshold(value: number) {
-    setEditing(prev => {
-      if (!prev) return prev
-      return { ...prev, alerts: { warningThreshold: value / 100 } }
-    })
+    setEditing(prev => prev ? { ...prev, alerts: { warningThreshold: value / 100 } } : prev)
   }
 
   async function handleSave() {
     if (!editing) return
-    setSaving(true)
-    setSaveError('')
+    setSaving(true); setSaveError('')
     try {
       await onSave(editing)
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
-    } catch (e: any) {
-      setSaveError(e.message)
-    } finally {
-      setSaving(false)
-    }
+      setSaved(true); setTimeout(() => setSaved(false), 2500)
+    } catch (e: any) { setSaveError(e.message) }
+    finally { setSaving(false) }
   }
 
   return (
@@ -585,9 +635,7 @@ function SlaConfigTab({ config, onSave }: {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
           <p style={{ fontWeight: 700, fontSize: 15 }}>Configuração de SLAs</p>
-          <p style={{ fontSize: 12, color: 'var(--c-muted)', marginTop: 3 }}>
-            Salvo no Jira (SA-34) — válido em qualquer dispositivo.
-          </p>
+          <p style={{ fontSize: 12, color: 'var(--c-muted)', marginTop: 3 }}>Salvo no Jira (SA-34) — válido em qualquer dispositivo.</p>
         </div>
         <button onClick={handleSave} disabled={saving} style={{
           fontSize: 13, padding: '8px 20px', borderRadius: 20,
@@ -596,15 +644,11 @@ function SlaConfigTab({ config, onSave }: {
           border: 'none', cursor: saving ? 'wait' : 'pointer',
           fontWeight: 600, transition: 'background 0.2s', opacity: saving ? 0.7 : 1,
         }}>
-          {saving ? 'Salvando...' : saved ? '✓ Salvo no Jira' : 'Salvar'}
+          {saving ? 'Salvando...' : saved ? '✓ Salvo' : 'Salvar'}
         </button>
       </div>
 
-      {saveError && (
-        <div style={{ background: 'var(--c-err-bg)', color: 'var(--c-err)', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
-          Erro ao salvar: {saveError}
-        </div>
-      )}
+      {saveError && <div style={{ background: 'var(--c-err-bg)', color: 'var(--c-err)', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>Erro: {saveError}</div>}
 
       <div style={{ marginBottom: 20 }}>
         <p className="section-label" style={{ marginBottom: 12 }}>Fluxo sequencial</p>
@@ -612,9 +656,7 @@ function SlaConfigTab({ config, onSave }: {
           {editing.flow.map((step, i) => (
             <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               {i > 0 && <span style={{ color: 'var(--c-muted)' }}>→</span>}
-              <span style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, background: 'var(--c-surface)', border: '1px solid var(--c-border)', fontWeight: 500 }}>
-                {step}
-              </span>
+              <span style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, background: 'var(--c-surface)', border: '1px solid var(--c-border)', fontWeight: 500 }}>{step}</span>
             </span>
           ))}
         </div>
@@ -630,10 +672,7 @@ function SlaConfigTab({ config, onSave }: {
             <div>
               <p style={{ fontSize: 13, fontWeight: 600 }}>{svc.label}</p>
               <p style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 2 }}>
-                {svc.waitClient ? 'Depende do cliente enviar dados'
-                  : svc.individual ? 'Escopo individual — definido caso a caso'
-                  : svc.slaDays ? `Alerta amarelo com ${Math.ceil(svc.slaDays * editing.alerts.warningThreshold)} dia(s)`
-                  : 'Sem SLA definido'}
+                {svc.waitClient ? 'Depende do cliente' : svc.individual ? 'Escopo individual' : svc.slaDays ? `Alerta amarelo com ${Math.ceil(svc.slaDays * editing.alerts.warningThreshold)} dia(s)` : 'Sem SLA definido'}
               </p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -641,19 +680,9 @@ function SlaConfigTab({ config, onSave }: {
               {svc.individual && <span className="badge neutral">Individual</span>}
               {!svc.waitClient && !svc.individual && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <button onClick={() => updateSla(svc.key, Math.max(1, (svc.slaDays || 1) - 1))} style={{
-                    width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--c-border)',
-                    background: 'var(--c-bg)', color: 'var(--c-text)', cursor: 'pointer',
-                    fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>−</button>
-                  <span style={{ fontSize: 20, fontWeight: 700, minWidth: 32, textAlign: 'center' }}>
-                    {svc.slaDays ?? '—'}
-                  </span>
-                  <button onClick={() => updateSla(svc.key, (svc.slaDays || 0) + 1)} style={{
-                    width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--c-border)',
-                    background: 'var(--c-bg)', color: 'var(--c-text)', cursor: 'pointer',
-                    fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>+</button>
+                  <button onClick={() => updateSla(svc.key, Math.max(1, (svc.slaDays || 1) - 1))} style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--c-border)', background: 'var(--c-bg)', color: 'var(--c-text)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                  <span style={{ fontSize: 20, fontWeight: 700, minWidth: 32, textAlign: 'center' }}>{svc.slaDays ?? '—'}</span>
+                  <button onClick={() => updateSla(svc.key, (svc.slaDays || 0) + 1)} style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--c-border)', background: 'var(--c-bg)', color: 'var(--c-text)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
                 </div>
               )}
             </div>
@@ -665,20 +694,13 @@ function SlaConfigTab({ config, onSave }: {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div>
             <p className="section-label">Threshold de alerta amarelo</p>
-            <p style={{ fontSize: 12, color: 'var(--c-muted)', marginTop: 4 }}>
-              Alerta 🟡 quando atingir <strong>{Math.round(editing.alerts.warningThreshold * 100)}%</strong> do SLA
-            </p>
+            <p style={{ fontSize: 12, color: 'var(--c-muted)', marginTop: 4 }}>Alerta 🟡 quando atingir <strong>{Math.round(editing.alerts.warningThreshold * 100)}%</strong> do SLA</p>
           </div>
           <span style={{ fontSize: 22, fontWeight: 700 }}>{Math.round(editing.alerts.warningThreshold * 100)}%</span>
         </div>
-        <input type="range" min={50} max={95} step={5}
-          value={Math.round(editing.alerts.warningThreshold * 100)}
-          onChange={e => updateThreshold(parseInt(e.target.value))}
-          style={{ width: '100%', accentColor: 'var(--c-warn)' }}
-        />
+        <input type="range" min={50} max={95} step={5} value={Math.round(editing.alerts.warningThreshold * 100)} onChange={e => updateThreshold(parseInt(e.target.value))} style={{ width: '100%', accentColor: 'var(--c-warn)' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--c-muted)', marginTop: 4 }}>
-          <span>50% — alerta mais cedo</span>
-          <span>95% — alerta mais tarde</span>
+          <span>50% — alerta mais cedo</span><span>95% — alerta mais tarde</span>
         </div>
       </div>
     </div>
@@ -698,17 +720,17 @@ export default function Page() {
   const [slaConfig, setSlaConfig] = useState<SlaConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState<'KAN' | 'SA' | 'PRODUCAO' | 'CONFIG'>('KAN')
+  const [tab, setTab] = useState<'KAN' | 'SA' | 'DASHBOARD' | 'PRODUCAO' | 'CONFIG'>('KAN')
   const [alertFilter, setAlertFilter] = useState('todos')
   const [statusFilter, setStatusFilter] = useState('todos')
+  const [taskStatusFilter, setTaskStatusFilter] = useState('todos') // filtro de status das tasks
   const [lastUpdate, setLastUpdate] = useState('')
   const [periodYear, setPeriodYear] = useState(now.getFullYear())
   const [periodMonth, setPeriodMonth] = useState(now.getMonth() + 1)
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null)
 
   const load = useCallback(async (year = periodYear, month = periodMonth) => {
-    setLoading(true)
-    setError('')
+    setLoading(true); setError('')
     try {
       const res = await fetch(`/api/jira?year=${year}&month=${month}`)
       const data = await res.json()
@@ -721,16 +743,11 @@ export default function Page() {
       setPendingByAssignee(data.pendingTasksByAssignee || {})
       if (data.slaConfig) setSlaConfig(data.slaConfig)
       setLastUpdate(new Date().toLocaleTimeString('pt-BR'))
-    } catch (e: any) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
-    }
+    } catch (e: any) { setError(e.message) }
+    finally { setLoading(false) }
   }, [periodYear, periodMonth])
 
   useEffect(() => { load() }, [])
-
-  // Fecha drawer com ESC
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelectedIssue(null) }
     window.addEventListener('keydown', handler)
@@ -739,8 +756,7 @@ export default function Page() {
 
   async function handleSlaConfigSave(newConfig: SlaConfig) {
     const res = await fetch('/api/jira', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newConfig),
     })
     const data = await res.json()
@@ -749,13 +765,21 @@ export default function Page() {
   }
 
   const handlePeriod = (year: number, month: number) => {
-    setPeriodYear(year)
-    setPeriodMonth(month)
-    load(year, month)
+    setPeriodYear(year); setPeriodMonth(month); load(year, month)
   }
 
   const implantadores = Array.from(new Set(clients.map(c => c.assignee || 'Sem responsável')))
   const availableStatuses = Array.from(new Set(clients.map(c => c.status).filter(Boolean)))
+
+  // Filtra clientes pelo status das suas tasks
+  function clientMatchesTaskStatusFilter(c: Issue): boolean {
+    if (taskStatusFilter === 'todos') return true
+    if (taskStatusFilter === 'a-fazer') return c.tasks.some(t => getStatusClass(t.status) === 'todo')
+    if (taskStatusFilter === 'em-andamento') return c.tasks.some(t => getStatusClass(t.status) === 'active')
+    if (taskStatusFilter === 'aguardando') return c.tasks.some(t => getStatusClass(t.status) === 'waiting')
+    if (taskStatusFilter === 'sem-tasks') return c.tasks.length === 0
+    return true
+  }
 
   const filteredKAN = clients.filter(c => {
     const alertMatch = (() => {
@@ -767,7 +791,8 @@ export default function Page() {
       return true
     })()
     const statusMatch = statusFilter === 'todos' || c.status === statusFilter
-    return alertMatch && statusMatch
+    const taskMatch = clientMatchesTaskStatusFilter(c)
+    return alertMatch && statusMatch && taskMatch
   })
 
   const filteredSA = saIssues.filter(c => {
@@ -836,12 +861,12 @@ export default function Page() {
         .filter-btn { font-size: 12px; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--c-border); background: transparent; color: var(--c-muted); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
         .filter-btn:hover { border-color: var(--c-muted); color: var(--c-text); }
         .filter-btn.on { background: var(--c-surface); color: var(--c-text); border-color: var(--c-text); font-weight: 600; }
-        .tab-btn { font-size: 13px; padding: 8px 16px; border: none; background: transparent; color: var(--c-muted); cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; transition: all 0.15s; white-space: nowrap; }
+        .tab-btn { font-size: 13px; padding: 8px 14px; border: none; background: transparent; color: var(--c-muted); cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; transition: all 0.15s; white-space: nowrap; }
         .tab-btn.on { color: var(--c-text); border-bottom-color: var(--c-text); }
         .stat { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; padding: 14px 16px; }
         .section-label { font-size: 11px; font-weight: 700; color: var(--c-muted); text-transform: uppercase; letter-spacing: 0.07em; }
         .prod-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; overflow: hidden; margin-bottom: 12px; }
-        .prod-header { padding: 16px; border-bottom: 1px solid var(--c-border); display: flex; justify-content: space-between; align-items: center; }
+        .prod-header { padding: 14px 16px; border-bottom: 1px solid var(--c-border); display: flex; justify-content: space-between; align-items: center; }
         .prod-section { padding: 12px 16px; }
         .prod-section + .prod-section { border-top: 1px solid var(--c-border); }
         .done-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
@@ -851,13 +876,8 @@ export default function Page() {
         .filter-divider { width: 1px; height: 20px; background: var(--c-border); margin: 0 4px; flex-shrink: 0; }
       `}</style>
 
-      {/* Drawer de detalhe */}
       {selectedIssue && (
-        <ClientDrawer
-          issue={selectedIssue}
-          slaConfig={slaConfig}
-          onClose={() => setSelectedIssue(null)}
-        />
+        <ClientDrawer issue={selectedIssue} slaConfig={slaConfig} onClose={() => setSelectedIssue(null)} />
       )}
 
       <div style={{ maxWidth: 800, margin: '0 auto', padding: '28px 16px' }}>
@@ -873,11 +893,7 @@ export default function Page() {
           </button>
         </div>
 
-        {error && (
-          <div style={{ background: 'var(--c-err-bg)', color: 'var(--c-err)', padding: '12px 14px', borderRadius: 8, marginBottom: 20, fontSize: 13 }}>
-            Erro: {error}
-          </div>
-        )}
+        {error && <div style={{ background: 'var(--c-err-bg)', color: 'var(--c-err)', padding: '12px 14px', borderRadius: 8, marginBottom: 20, fontSize: 13 }}>Erro: {error}</div>}
 
         {/* Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8, marginBottom: 24 }}>
@@ -901,11 +917,12 @@ export default function Page() {
           {[
             { key: 'KAN', label: `Implantações (${summary.total})` },
             { key: 'SA', label: `Serv. Adicionais (${summary.totalSA})` },
+            { key: 'DASHBOARD', label: '📊 Dashboard' },
             { key: 'PRODUCAO', label: 'Produção' },
             { key: 'CONFIG', label: '⚙ SLAs' },
           ].map(t => (
             <button key={t.key} className={`tab-btn ${tab === t.key ? 'on' : ''}`}
-              onClick={() => { setTab(t.key as any); setAlertFilter('todos'); setStatusFilter('todos') }}>
+              onClick={() => { setTab(t.key as any); setAlertFilter('todos'); setStatusFilter('todos'); setTaskStatusFilter('todos') }}>
               {t.label}
             </button>
           ))}
@@ -914,6 +931,7 @@ export default function Page() {
         {/* Filtros KAN */}
         {tab === 'KAN' && (
           <div style={{ marginBottom: 16 }}>
+            {/* Linha 1: alerta + implantador */}
             <div className="filter-group">
               {[
                 { key: 'todos', label: 'Todos' },
@@ -922,23 +940,31 @@ export default function Page() {
                 { key: 'aguardando', label: '⏸ Aguardando' },
                 { key: 'semtasks', label: '⚠️ Sem tasks' },
               ].map(f => (
-                <button key={f.key} className={`filter-btn ${alertFilter === f.key ? 'on' : ''}`} onClick={() => setAlertFilter(f.key)}>
-                  {f.label}
-                </button>
+                <button key={f.key} className={`filter-btn ${alertFilter === f.key ? 'on' : ''}`} onClick={() => setAlertFilter(f.key)}>{f.label}</button>
               ))}
               <div className="filter-divider" />
               {implantadores.map(impl => (
-                <button key={impl} className={`filter-btn ${alertFilter === impl ? 'on' : ''}`} onClick={() => setAlertFilter(impl)}>
-                  {impl.split(' ')[0]}
-                </button>
+                <button key={impl} className={`filter-btn ${alertFilter === impl ? 'on' : ''}`} onClick={() => setAlertFilter(impl)}>{impl.split(' ')[0]}</button>
               ))}
             </div>
+            {/* Linha 2: status do Epic */}
             <div className="filter-group">
-              <span style={{ fontSize: 11, color: 'var(--c-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status:</span>
+              <span style={{ fontSize: 11, color: 'var(--c-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Epic:</span>
               {['todos', ...availableStatuses].map(s => (
-                <button key={s} className={`filter-btn ${statusFilter === s ? 'on' : ''}`} onClick={() => setStatusFilter(s)}>
-                  {s === 'todos' ? 'Todos' : s}
-                </button>
+                <button key={s} className={`filter-btn ${statusFilter === s ? 'on' : ''}`} onClick={() => setStatusFilter(s)}>{s === 'todos' ? 'Todos' : s}</button>
+              ))}
+            </div>
+            {/* Linha 3: status das tasks */}
+            <div className="filter-group">
+              <span style={{ fontSize: 11, color: 'var(--c-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tasks:</span>
+              {[
+                { key: 'todos', label: 'Todas' },
+                { key: 'a-fazer', label: 'A fazer' },
+                { key: 'em-andamento', label: 'Em andamento' },
+                { key: 'aguardando', label: 'Aguardando' },
+                { key: 'sem-tasks', label: 'Sem tasks' },
+              ].map(f => (
+                <button key={f.key} className={`filter-btn ${taskStatusFilter === f.key ? 'on' : ''}`} onClick={() => setTaskStatusFilter(f.key)}>{f.label}</button>
               ))}
             </div>
           </div>
@@ -952,9 +978,7 @@ export default function Page() {
               { key: 'atencao', label: '🟡 Atenção' },
               { key: 'aguardando', label: '⏸ Aguardando' },
             ].map(f => (
-              <button key={f.key} className={`filter-btn ${alertFilter === f.key ? 'on' : ''}`} onClick={() => setAlertFilter(f.key)}>
-                {f.label}
-              </button>
+              <button key={f.key} className={`filter-btn ${alertFilter === f.key ? 'on' : ''}`} onClick={() => setAlertFilter(f.key)}>{f.label}</button>
             ))}
           </div>
         )}
@@ -982,12 +1006,8 @@ export default function Page() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid var(--c-border)' }}>
                   <span className="section-label">{impl}</span>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    {cls.filter(c => c.alert === 'critical').length > 0 && (
-                      <span className="badge err">{cls.filter(c => c.alert === 'critical').length} crítico(s)</span>
-                    )}
-                    {cls.filter(c => c.alert === 'warning').length > 0 && (
-                      <span className="badge warn">{cls.filter(c => c.alert === 'warning').length} atenção</span>
-                    )}
+                    {cls.filter(c => c.alert === 'critical').length > 0 && <span className="badge err">{cls.filter(c => c.alert === 'critical').length} crítico(s)</span>}
+                    {cls.filter(c => c.alert === 'warning').length > 0 && <span className="badge warn">{cls.filter(c => c.alert === 'warning').length} atenção</span>}
                     <span className="section-label">{cls.length} cliente(s)</span>
                   </div>
                 </div>
@@ -1002,6 +1022,9 @@ export default function Page() {
             ? <p style={{ textAlign: 'center', color: 'var(--c-muted)', padding: '3rem' }}>Nenhum serviço encontrado.</p>
             : filteredSA.map(i => <IssueCard key={i.key} issue={i} onOpen={() => setSelectedIssue(i)} />)
         )}
+
+        {/* Dashboard */}
+        {!loading && tab === 'DASHBOARD' && <DashboardTab clients={clients} />}
 
         {/* Produção */}
         {!loading && tab === 'PRODUCAO' && (
@@ -1035,12 +1058,8 @@ export default function Page() {
                         <div key={task.key} className="done-row">
                           <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--c-warn)', flexShrink: 0, display: 'inline-block' }} />
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <button onClick={(e) => openJira(task.key, e)} className="link-btn" style={{ fontSize: 12, display: 'block', textAlign: 'left' }}>
-                              {task.summary.replace(/.*?[-–]\s*/, '').trim()}
-                            </button>
-                            <button onClick={(e) => openJira(task.epicKey, e)} className="link-btn" style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 1, display: 'block', textAlign: 'left' }}>
-                              {task.epicName}
-                            </button>
+                            <button onClick={(e) => openJira(task.key, e)} className="link-btn" style={{ fontSize: 12, display: 'block', textAlign: 'left' }}>{task.summary.replace(/.*?[-–]\s*/, '').trim()}</button>
+                            <button onClick={(e) => openJira(task.epicKey, e)} className="link-btn" style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 1, display: 'block', textAlign: 'left' }}>{task.epicName}</button>
                           </div>
                           <span className="meta">{task.status}</span>
                         </div>
@@ -1057,18 +1076,10 @@ export default function Page() {
                         <div key={task.key} className="done-row">
                           <span className={`badge ${task.proj === 'KAN' ? 'info' : 'ok'}`} style={{ fontSize: 10, padding: '2px 6px' }}>{task.proj}</span>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <button onClick={(e) => openJira(task.key, e)} className="link-btn" style={{ fontSize: 12, display: 'block', textAlign: 'left' }}>
-                              {task.summary.replace(/.*?[-–]\s*/, '').trim()}
-                            </button>
-                            {task.parentName && (
-                              <button onClick={(e) => openJira(task.parentKey!, e)} className="link-btn" style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 1, display: 'block', textAlign: 'left' }}>
-                                {task.parentName}
-                              </button>
-                            )}
+                            <button onClick={(e) => openJira(task.key, e)} className="link-btn" style={{ fontSize: 12, display: 'block', textAlign: 'left' }}>{task.summary.replace(/.*?[-–]\s*/, '').trim()}</button>
+                            {task.parentName && <button onClick={(e) => openJira(task.parentKey!, e)} className="link-btn" style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 1, display: 'block', textAlign: 'left' }}>{task.parentName}</button>}
                           </div>
-                          {task.resolvedAt && (
-                            <span className="meta">{new Date(task.resolvedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</span>
-                          )}
+                          {task.resolvedAt && <span className="meta">{new Date(task.resolvedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</span>}
                         </div>
                       ))}
                     </div>
@@ -1078,9 +1089,8 @@ export default function Page() {
             })
         )}
 
-        {/* Config SLA */}
+        {/* Config */}
         {tab === 'CONFIG' && <SlaConfigTab config={slaConfig} onSave={handleSlaConfigSave} />}
-
       </div>
     </>
   )
