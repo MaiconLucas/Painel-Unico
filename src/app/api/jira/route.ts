@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
-import slaConfig from '@/sla-config.json'
+import slaConfigDefault from '@/sla-config.json'
 
 const JIRA_BASE = process.env.JIRA_BASE_URL!
 const EMAIL = process.env.JIRA_EMAIL!
 const TOKEN = process.env.JIRA_API_TOKEN!
 const PROJECT_KAN = process.env.JIRA_PROJECT_KEY || 'KAN'
 const PROJECT_SA = process.env.JIRA_PROJECT_KEY_SA || 'SA'
+const SLA_CONFIG_ISSUE = 'SA-34'
 
 const auth = Buffer.from(`${EMAIL}:${TOKEN}`).toString('base64')
 const headers = {
@@ -18,6 +19,43 @@ async function jiraFetch(path: string) {
   const res = await fetch(`${JIRA_BASE}/rest/api/3${path}`, { headers, cache: 'no-store' })
   if (!res.ok) throw new Error(`Jira error: ${res.status} ${await res.text()}`)
   return res.json()
+}
+
+async function jiraPut(path: string, body: any) {
+  const res = await fetch(`${JIRA_BASE}/rest/api/3${path}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`Jira PUT error: ${res.status} ${await res.text()}`)
+  return res.status === 204 ? null : res.json()
+}
+
+// Extrai JSON da description ADF da issue de config
+function extractJsonFromAdf(description: any): any | null {
+  if (!description) return null
+  try {
+    function walk(node: any): string {
+      if (!node) return ''
+      if (node.type === 'text') return node.text || ''
+      if (node.type === 'hardBreak') return '\n'
+      return (node.content || []).map(walk).join('')
+    }
+    const raw = walk(description)
+    const match = raw.match(/\{[\s\S]*\}/)
+    if (match) return JSON.parse(match[0])
+  } catch (_) {}
+  return null
+}
+
+// Carrega SLA config do Jira (SA-34)
+async function loadSlaConfig() {
+  try {
+    const data = await jiraFetch(`/issue/${SLA_CONFIG_ISSUE}?fields=description`)
+    const parsed = extractJsonFromAdf(data.fields.description)
+    if (parsed && parsed.services && parsed.flow) return parsed
+  } catch (_) {}
+  return slaConfigDefault
 }
 
 function extractText(description: any): string {
@@ -77,19 +115,19 @@ function businessDaysBetween(start: Date, end: Date): number {
   return count
 }
 
-function calcStageAlert(tasks: any[], epicCreatedAt: string) {
+function calcStageAlert(tasks: any[], epicCreatedAt: string, slaConfig: any) {
   const flow: string[] = slaConfig.flow
   const services = slaConfig.services
   const warningThreshold = slaConfig.alerts.warningThreshold
 
   const orderedTasks = flow
-    .map(flowKey => tasks.find((t: any) =>
+    .map((flowKey: string) => tasks.find((t: any) =>
       t.summary?.toLowerCase().includes(flowKey.toLowerCase())
     ))
     .filter(Boolean)
 
   const freeTasks = tasks.filter((t: any) =>
-    !flow.some(f => t.summary?.toLowerCase().includes(f.toLowerCase()))
+    !flow.some((f: string) => t.summary?.toLowerCase().includes(f.toLowerCase()))
   )
 
   const allOrdered = [...orderedTasks, ...freeTasks]
@@ -105,11 +143,9 @@ function calcStageAlert(tasks: any[], epicCreatedAt: string) {
 
   const taskStatus = currentTask.status?.toLowerCase() || ''
   const isWaitingClient = taskStatus.includes('aguardando')
-
   const since = currentTask.updatedAt || currentTask.createdAt || epicCreatedAt
   const daysInStage = businessDaysBetween(new Date(since), new Date())
-
-  const serviceKey = flow.find(f => currentTask.summary?.toLowerCase().includes(f.toLowerCase()))
+  const serviceKey = flow.find((f: string) => currentTask.summary?.toLowerCase().includes(f.toLowerCase()))
   const serviceConfig = services.find((s: any) => s.key === serviceKey)
 
   let alert: string
@@ -157,6 +193,8 @@ function calcStageAlert(tasks: any[], epicCreatedAt: string) {
   }
 }
 
+// ─── GET — carrega dados do painel ────────────────────────────────────────────
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -166,6 +204,9 @@ export async function GET(request: Request) {
     const periodStart = `${year}-${String(month).padStart(2, '0')}-01`
     const lastDay = new Date(year, month, 0).getDate()
     const periodEnd = `${year}-${String(month).padStart(2, '0')}-${lastDay}`
+
+    // Carrega SLA config do Jira
+    const slaConfig = await loadSlaConfig()
 
     // KAN — Epics abertos
     const epicJql = encodeURIComponent(
@@ -197,14 +238,12 @@ export async function GET(request: Request) {
 
       const desc = extractText(epic.fields.description)
       const { score, services, plano } = parseDescription(desc)
-
       const due = epic.fields.duedate || null
       const status = epic.fields.status?.name || ''
       const now = new Date()
       const dueDate = due ? new Date(due) : null
-
       const pendingTasks = tasks.filter((t: any) => !t.status?.toLowerCase().includes('conclu'))
-      const stageAlert = calcStageAlert(tasks, epic.fields.created)
+      const stageAlert = calcStageAlert(tasks, epic.fields.created, slaConfig)
 
       return {
         key: epic.key,
@@ -232,7 +271,9 @@ export async function GET(request: Request) {
     }))
 
     // SA — Issues abertas
-    const saJql = encodeURIComponent(`project=${PROJECT_SA} AND status!="Concluído" AND status!="Cancelado"`)
+    const saJql = encodeURIComponent(
+      `project=${PROJECT_SA} AND status!="Concluído" AND status!="Cancelado" AND summary!="CONFIG — SLAs"`
+    )
     const saData = await jiraFetch(
       `/search/jql?jql=${saJql}&maxResults=100&fields=summary,status,assignee,duedate,created,updated`
     )
@@ -331,6 +372,40 @@ export async function GET(request: Request) {
       period: { year, month },
       slaConfig,
     })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+// ─── POST — salva SLA config no Jira ─────────────────────────────────────────
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    if (!body.services || !body.flow || !body.alerts) {
+      return NextResponse.json({ error: 'Payload inválido' }, { status: 400 })
+    }
+
+    const jsonStr = JSON.stringify(body, null, 2)
+
+    // Atualiza description da SA-34 com o JSON novo em formato ADF
+    await jiraPut(`/issue/${SLA_CONFIG_ISSUE}`, {
+      fields: {
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            {
+              type: 'codeBlock',
+              attrs: { language: 'json' },
+              content: [{ type: 'text', text: jsonStr }],
+            },
+          ],
+        },
+      },
+    })
+
+    return NextResponse.json({ ok: true })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
