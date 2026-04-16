@@ -221,7 +221,7 @@ export async function GET(request: Request) {
       let tasks: any[] = []
       try {
         const taskJql = encodeURIComponent(
-          `project=${PROJECT_KAN} AND issuetype=Tarefa AND parent=${epic.key}`
+          `project=${PROJECT_KAN} AND parent=${epic.key}`
         )
         const tasksData = await jiraFetch(
           `/search/jql?jql=${taskJql}&maxResults=50&fields=summary,status,assignee,created,updated`
@@ -310,7 +310,7 @@ export async function GET(request: Request) {
 
     // Tasks KAN concluídas no período
     const doneTasksJql = encodeURIComponent(
-      `project=${PROJECT_KAN} AND issuetype=Tarefa AND status="Concluído" AND resolutiondate>="${periodStart}" AND resolutiondate<="${periodEnd}"`
+      `project=${PROJECT_KAN} AND issueType!=Epic AND status="Concluído" AND resolutiondate>="${periodStart}" AND resolutiondate<="${periodEnd}"`
     )
     const doneTasksData = await jiraFetch(
       `/search/jql?jql=${doneTasksJql}&maxResults=200&fields=summary,assignee,parent,resolutiondate`
