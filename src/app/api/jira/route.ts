@@ -221,7 +221,7 @@ export async function GET(request: Request) {
       let tasks: any[] = []
       try {
         const taskJql = encodeURIComponent(
-          `project=${PROJECT_KAN} AND issuetype=Tarefa AND parent="${epic.key}"`
+          `project=${PROJECT_KAN} AND issuetype=Tarefa AND parent=${epic.key}`
         )
         const tasksData = await jiraFetch(
           `/search/jql?jql=${taskJql}&maxResults=50&fields=summary,status,assignee,created,updated`
