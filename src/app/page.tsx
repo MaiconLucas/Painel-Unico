@@ -1,751 +1,31 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-
-const JIRA_URL = 'https://suporteunico.atlassian.net/browse'
-const TASK_ORDER = ['Site', 'Portfólio', 'Implantação', 'Consultoria', 'URA', 'Importação de contatos', 'Migração']
-const MONTH_NAMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
-const ALL_TASK_TYPES = ['Site', 'Portfólio', 'Implantação', 'Consultoria', 'URA', 'Importação de contatos', 'Migração', 'CRM', 'Integração', 'IA']
-
-function openJira(key: string, e?: React.MouseEvent) {
-  e?.stopPropagation()
-  window.open(`${JIRA_URL}/${key}`, '_blank', 'noopener,noreferrer')
-}
-
-type Task = {
-  key: string
-  summary: string
-  status: string
-  assignee?: string | null
-}
-
-type Issue = {
-  key: string
-  name: string
-  assignee: string | null
-  status: string
-  dueDate: string | null
-  score: number | null
-  services: string | null
-  plano: string | null
-  tasks: Task[]
-  allTasksCount: number
-  doneTasksCount: number
-  overdue: boolean
-  nearDeadline: boolean
-  waiting: boolean
-  project: string
-  stage: string | null
-  stageStatus: string
-  daysInStage: number
-  alert: string
-  alertReason: string
-  currentTaskKey?: string
-}
-
-type DoneTask = {
-  key: string
-  summary: string
-  assignee: string | null
-  parentKey: string | null
-  parentName: string | null
-  resolvedAt: string | null
-}
-
-type SlaService = {
-  key: string
-  label: string
-  slaDays: number | null
-  waitClient: boolean
-  individual: boolean
-}
-
-type SlaConfig = {
-  services: SlaService[]
-  flow: string[]
-  alerts: { warningThreshold: number }
-}
-
-type Summary = {
-  total: number
-  totalSA: number
-  atrasados: number
-  aguardando: number
-  alertas: number
-  ok: number
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function alertColor(alert: string) {
-  switch (alert) {
-    case 'critical': return 'var(--c-err)'
-    case 'warning':  return 'var(--c-warn)'
-    case 'waiting':  return 'var(--c-blue)'
-    case 'ok':       return 'var(--c-ok)'
-    case 'done':     return 'var(--c-ok)'
-    case 'noTasks':  return 'var(--c-muted)'
-    default:         return 'var(--c-muted)'
-  }
-}
-
-function alertBg(alert: string) {
-  switch (alert) {
-    case 'critical': return 'var(--c-err-bg)'
-    case 'warning':  return 'var(--c-warn-bg)'
-    case 'waiting':  return 'var(--c-blue-bg)'
-    case 'ok':       return 'var(--c-ok-bg)'
-    case 'done':     return 'var(--c-ok-bg)'
-    case 'noTasks':  return 'var(--c-border)'
-    default:         return 'var(--c-border)'
-  }
-}
-
-function alertIcon(alert: string) {
-  switch (alert) {
-    case 'critical': return '🔴'
-    case 'warning':  return '🟡'
-    case 'waiting':  return '⏸'
-    case 'ok':       return '🟢'
-    case 'done':     return '✅'
-    case 'noTasks':  return '⚠️'
-    default:         return '⚪'
-  }
-}
-
-function alertLabel(alert: string) {
-  switch (alert) {
-    case 'critical': return 'Crítico'
-    case 'warning':  return 'Atenção'
-    case 'waiting':  return 'Aguardando cliente'
-    case 'ok':       return 'No prazo'
-    case 'done':     return 'Concluído'
-    case 'noTasks':  return 'Sem tasks'
-    default:         return '—'
-  }
-}
-
-function getTaskType(summary: string): string {
-  for (const t of ALL_TASK_TYPES) {
-    if (summary?.toLowerCase().includes(t.toLowerCase())) return t
-  }
-  return 'Outros'
-}
-
-function getStatusClass(status: string): 'done' | 'active' | 'waiting' | 'todo' {
-  const s = status.toLowerCase()
-  if (s.includes('conclu')) return 'done'
-  if (s.includes('andamento')) return 'active'
-  if (s.includes('aguardando')) return 'waiting'
-  return 'todo'
-}
-
-// ─── Client Drawer ────────────────────────────────────────────────────────────
-
-function ClientDrawer({ issue, slaConfig, onClose }: {
-  issue: Issue
-  slaConfig: SlaConfig | null
-  onClose: () => void
-}) {
-  const flow = slaConfig?.flow || TASK_ORDER
-
-  const timelineSteps = flow.map(stepKey => {
-    const task = issue.tasks.find(t => t.summary?.toLowerCase().includes(stepKey.toLowerCase()))
-    const contracted = issue.services?.toLowerCase().includes(stepKey.toLowerCase())
-    const hasTask = !!task
-    return { stepKey, task, show: contracted || hasTask }
-  }).filter(s => s.show)
-
-  const freeTasks = issue.tasks.filter(t =>
-    !flow.some(f => t.summary?.toLowerCase().includes(f.toLowerCase()))
-  )
-
-  function getStepState(task: Task | undefined): 'done' | 'active' | 'waiting' | 'pending' | 'missing' {
-    if (!task) return 'missing'
-    return getStatusClass(task.status) as any
-  }
-
-  function getStepColors(state: string) {
-    switch (state) {
-      case 'done':    return { bg: 'var(--c-ok-bg)', color: 'var(--c-ok)', border: 'var(--c-ok)' }
-      case 'active':  return { bg: 'var(--c-blue-bg)', color: 'var(--c-blue)', border: 'var(--c-blue)' }
-      case 'waiting': return { bg: 'var(--c-warn-bg)', color: 'var(--c-warn)', border: 'var(--c-warn)' }
-      default:        return { bg: 'var(--c-bg)', color: 'var(--c-muted)', border: 'var(--c-border)' }
-    }
-  }
-
-  function getStepIcon(state: string) {
-    switch (state) {
-      case 'done':    return '✓'
-      case 'active':  return '●'
-      case 'waiting': return '⏸'
-      default:        return '○'
-    }
-  }
-
-  function getStepLabel(state: string) {
-    switch (state) {
-      case 'done':    return 'Concluído'
-      case 'active':  return 'Em andamento'
-      case 'waiting': return 'Aguardando cliente'
-      case 'pending': return 'A fazer'
-      default:        return 'Não iniciado'
-    }
-  }
-
-  const nextStep = timelineSteps.find(({ task }) => {
-    const s = getStepState(task)
-    return s === 'pending' || s === 'missing'
-  })
-
-  const progress = issue.allTasksCount > 0
-    ? Math.round((issue.doneTasksCount / issue.allTasksCount) * 100)
-    : 0
-
-  return (
-    <>
-      <div onClick={onClose} style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
-        zIndex: 100, backdropFilter: 'blur(2px)', animation: 'fadeIn 0.15s ease',
-      }} />
-      <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0,
-        width: 'min(520px, 100vw)', background: 'var(--c-surface)',
-        borderLeft: '1px solid var(--c-border)', zIndex: 101,
-        overflowY: 'auto', animation: 'slideIn 0.2s ease',
-        display: 'flex', flexDirection: 'column',
-      }}>
-        {/* Header */}
-        <div style={{
-          padding: '20px 24px', borderBottom: '1px solid var(--c-border)',
-          position: 'sticky', top: 0, background: 'var(--c-surface)', zIndex: 1,
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <button onClick={(e) => openJira(issue.key, e)} style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                fontSize: 15, fontWeight: 700, color: 'var(--c-text)',
-                textAlign: 'left', lineHeight: 1.4, padding: 0, fontFamily: 'inherit',
-              }}>
-                {issue.name} ↗
-              </button>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6, alignItems: 'center' }}>
-                <span className="meta">{issue.key}</span>
-                {issue.assignee && <span className="meta">👤 {issue.assignee.split(' ')[0]}</span>}
-                {issue.score != null && <span className="meta">{issue.score} pts</span>}
-              </div>
-            </div>
-            <button onClick={onClose} style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              fontSize: 20, color: 'var(--c-muted)', padding: '0 4px', lineHeight: 1, flexShrink: 0,
-            }}>✕</button>
-          </div>
-
-          <div style={{
-            marginTop: 14, padding: '10px 14px', borderRadius: 10,
-            background: alertBg(issue.alert), display: 'flex', alignItems: 'center', gap: 10,
-          }}>
-            <span style={{ fontSize: 20 }}>{alertIcon(issue.alert)}</span>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 700, color: alertColor(issue.alert) }}>
-                {alertLabel(issue.alert)}{issue.stage ? ` — ${issue.stage}` : ''}
-              </p>
-              <p style={{ fontSize: 12, color: alertColor(issue.alert), opacity: 0.85, marginTop: 2 }}>
-                {issue.alertReason}
-              </p>
-            </div>
-          </div>
-
-          {issue.allTasksCount > 0 && (
-            <div style={{ marginTop: 14 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                <span style={{ fontSize: 11, color: 'var(--c-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Progresso</span>
-                <span style={{ fontSize: 11, color: 'var(--c-muted)' }}>{issue.doneTasksCount}/{issue.allTasksCount} etapas · {progress}%</span>
-              </div>
-              <div style={{ height: 6, background: 'var(--c-border)', borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{
-                  height: '100%', width: `${progress}%`,
-                  background: progress === 100 ? 'var(--c-ok)' : alertColor(issue.alert),
-                  borderRadius: 3, transition: 'width 0.4s ease',
-                }} />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Body */}
-        <div style={{ padding: '20px 24px', flex: 1 }}>
-          {nextStep && (
-            <div style={{
-              marginBottom: 24, padding: '12px 16px',
-              background: 'var(--c-bg)', borderRadius: 10,
-              border: '1px dashed var(--c-border)',
-            }}>
-              <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
-                Próxima etapa
-              </p>
-              <p style={{ fontSize: 14, fontWeight: 600 }}>{nextStep.stepKey}</p>
-              <p style={{ fontSize: 12, color: 'var(--c-muted)', marginTop: 2 }}>
-                {nextStep.task ? 'Task criada, aguardando início' : 'Task ainda não criada'}
-              </p>
-            </div>
-          )}
-
-          <p className="section-label" style={{ marginBottom: 14 }}>Timeline do cliente</p>
-
-          {timelineSteps.length === 0 && (
-            <p style={{ fontSize: 13, color: 'var(--c-muted)' }}>Nenhuma etapa encontrada.</p>
-          )}
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {timelineSteps.map(({ stepKey, task }, i) => {
-              const state = getStepState(task)
-              const colors = getStepColors(state)
-              const isLast = i === timelineSteps.length - 1
-              const isCurrent = task?.key === issue.currentTaskKey
-
-              return (
-                <div key={stepKey} style={{ display: 'flex', gap: 0 }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 32, flexShrink: 0 }}>
-                    <div style={{
-                      width: 28, height: 28, borderRadius: '50%',
-                      background: colors.bg, border: `2px solid ${colors.border}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 12, fontWeight: 700, color: colors.color, flexShrink: 0, zIndex: 1,
-                      boxShadow: isCurrent ? `0 0 0 3px ${colors.bg}` : 'none',
-                    }}>
-                      {getStepIcon(state)}
-                    </div>
-                    {!isLast && (
-                      <div style={{
-                        width: 2, flex: 1, minHeight: 16,
-                        background: state === 'done' ? 'var(--c-ok)' : 'var(--c-border)',
-                        margin: '2px 0',
-                      }} />
-                    )}
-                  </div>
-
-                  <div style={{ flex: 1, paddingLeft: 12, paddingBottom: isLast ? 0 : 20, paddingTop: 2 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                      <div>
-                        <p style={{
-                          fontSize: 13, fontWeight: isCurrent ? 700 : 600,
-                          color: state === 'pending' || state === 'missing' ? 'var(--c-muted)' : 'var(--c-text)',
-                        }}>
-                          {stepKey}
-                          {isCurrent && <span style={{ fontSize: 10, marginLeft: 6, color: colors.color, fontWeight: 700 }}>← AGORA</span>}
-                        </p>
-                        <p style={{ fontSize: 11, color: colors.color, marginTop: 2, fontWeight: 500 }}>
-                          {getStepLabel(state)}
-                        </p>
-                      </div>
-                      {task && (
-                        <button onClick={(e) => openJira(task.key, e)} style={{
-                          fontSize: 10, padding: '2px 8px', borderRadius: 20,
-                          background: 'var(--c-bg)', border: '1px solid var(--c-border)',
-                          color: 'var(--c-muted)', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-                        }}>{task.key} ↗</button>
-                      )}
-                    </div>
-                    {task && (state === 'active' || state === 'waiting') && (
-                      <div style={{ marginTop: 6, padding: '6px 10px', borderRadius: 6, background: colors.bg, fontSize: 11, color: colors.color }}>
-                        {state === 'active' ? issue.alertReason : `Aguardando resposta do cliente · ${issue.daysInStage} dia(s)`}
-                      </div>
-                    )}
-                    {!task && <p style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 4 }}>Task não criada ainda</p>}
-                  </div>
-                </div>
-              )
-            })}
-
-            {freeTasks.length > 0 && (
-              <div style={{ marginTop: 20 }}>
-                <p className="section-label" style={{ marginBottom: 12 }}>Serviços adicionais</p>
-                {freeTasks.map(task => {
-                  const state = getStepState(task)
-                  const colors = getStepColors(state)
-                  return (
-                    <div key={task.key} style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '10px 12px', borderRadius: 8, marginBottom: 6,
-                      background: colors.bg, border: `1px solid ${colors.border}`,
-                    }}>
-                      <span style={{ fontSize: 13, color: colors.color }}>{getStepIcon(state)}</span>
-                      <div style={{ flex: 1 }}>
-                        <p style={{ fontSize: 13, fontWeight: 600 }}>{task.summary.replace(/.*?[-–]\s*/, '').trim()}</p>
-                        <p style={{ fontSize: 11, color: colors.color, marginTop: 1 }}>{getStepLabel(state)}</p>
-                      </div>
-                      <button onClick={(e) => openJira(task.key, e)} style={{
-                        fontSize: 10, padding: '2px 8px', borderRadius: 20,
-                        background: 'var(--c-surface)', border: '1px solid var(--c-border)',
-                        color: 'var(--c-muted)', cursor: 'pointer',
-                      }}>{task.key} ↗</button>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          {issue.services && (
-            <div style={{ marginTop: 24 }}>
-              <p className="section-label" style={{ marginBottom: 8 }}>Serviços contratados</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {issue.services.split(' · ').map((s, i) => (
-                  <span key={i} style={{
-                    padding: '2px 10px', borderRadius: 20,
-                    background: 'var(--c-bg)', border: '1px solid var(--c-border)', fontSize: 11,
-                  }}>{s}</span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </>
-  )
-}
-
-// ─── Issue Card ───────────────────────────────────────────────────────────────
-
-function IssueCard({ issue, onOpen }: { issue: Issue, onOpen: () => void }) {
-  const progress = issue.allTasksCount > 0
-    ? Math.round((issue.doneTasksCount / issue.allTasksCount) * 100)
-    : null
-
-  return (
-    <div className="card" onClick={onOpen} style={{ borderLeft: `3px solid ${alertColor(issue.alert)}`, cursor: 'pointer' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.4 }}>{issue.name}</p>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 5, alignItems: 'center' }}>
-            <span className="meta">{issue.key}</span>
-            {issue.score != null && <span className="meta">{issue.score} pts</span>}
-            {progress !== null && <span className="meta">{issue.doneTasksCount}/{issue.allTasksCount} etapas</span>}
-            <span className="meta">{issue.status}</span>
-          </div>
-        </div>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
-          background: alertBg(issue.alert), borderRadius: 8, padding: '5px 10px',
-        }}>
-          <span style={{ fontSize: 13 }}>{alertIcon(issue.alert)}</span>
-          <div>
-            <p style={{ fontSize: 11, fontWeight: 700, color: alertColor(issue.alert), whiteSpace: 'nowrap' }}>
-              {issue.stage || alertLabel(issue.alert)}
-            </p>
-            <p style={{ fontSize: 10, color: alertColor(issue.alert), opacity: 0.85, marginTop: 1, whiteSpace: 'nowrap' }}>
-              {issue.alertReason}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {progress !== null && (
-        <div style={{ marginTop: 10, height: 3, background: 'var(--c-border)', borderRadius: 2, overflow: 'hidden' }}>
-          <div style={{
-            height: '100%', width: `${progress}%`,
-            background: progress === 100 ? 'var(--c-ok)' : alertColor(issue.alert),
-            borderRadius: 2, transition: 'width 0.4s ease',
-          }} />
-        </div>
-      )}
-
-      <p style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 8 }}>Clique para ver detalhes →</p>
-    </div>
-  )
-}
-
-// ─── Dashboard Tab ────────────────────────────────────────────────────────────
-
-function DashboardTab({ clients }: { clients: Issue[] }) {
-  // Agrega todas as tasks de todos os clientes
-  const allTasks = clients.flatMap(c =>
-    c.tasks.map(t => ({
-      ...t,
-      epicAssignee: c.assignee || 'Sem responsável',
-      epicKey: c.key,
-      type: getTaskType(t.summary),
-    }))
-  )
-
-  // Por tipo de serviço
-  const byType: Record<string, { todo: number, active: number, waiting: number, done: number, total: number }> = {}
-  ALL_TASK_TYPES.forEach(t => { byType[t] = { todo: 0, active: 0, waiting: 0, done: 0, total: 0 } })
-
-  allTasks.forEach(task => {
-    const type = task.type
-    if (!byType[type]) byType[type] = { todo: 0, active: 0, waiting: 0, done: 0, total: 0 }
-    const sc = getStatusClass(task.status)
-    byType[type][sc]++
-    byType[type].total++
-  })
-
-  // Filtra tipos que têm pelo menos 1 task
-  const activeTypes = ALL_TASK_TYPES.filter(t => byType[t]?.total > 0)
-
-  // Por implantador → por tipo
-  const byImpl: Record<string, Record<string, { todo: number, active: number, waiting: number, total: number }>> = {}
-  allTasks.forEach(task => {
-    const impl = task.epicAssignee
-    const type = task.type
-    if (!byImpl[impl]) byImpl[impl] = {}
-    if (!byImpl[impl][type]) byImpl[impl][type] = { todo: 0, active: 0, waiting: 0, total: 0 }
-    const sc = getStatusClass(task.status)
-    if (sc !== 'done') {
-      if (sc === 'active') byImpl[impl][type].active++
-      else if (sc === 'waiting') byImpl[impl][type].waiting++
-      else byImpl[impl][type].todo++
-      byImpl[impl][type].total++
-    }
-  })
-
-  const implantadores = Object.keys(byImpl).sort()
-
-  function StatusBar({ todo, active, waiting, total }: { todo: number, active: number, waiting: number, total: number }) {
-    if (total === 0) return null
-    return (
-      <div style={{ height: 6, background: 'var(--c-border)', borderRadius: 3, overflow: 'hidden', marginTop: 6 }}>
-        <div style={{ display: 'flex', height: '100%' }}>
-          <div style={{ width: `${(active / total) * 100}%`, background: 'var(--c-blue)' }} />
-          <div style={{ width: `${(waiting / total) * 100}%`, background: 'var(--c-warn)' }} />
-          <div style={{ width: `${(todo / total) * 100}%`, background: 'var(--c-border)' }} />
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      {/* Por tipo de serviço */}
-      <p className="section-label" style={{ marginBottom: 14 }}>Visão por tipo de serviço</p>
-
-      {activeTypes.length === 0 && (
-        <p style={{ color: 'var(--c-muted)', fontSize: 13 }}>Nenhuma task pendente encontrada.</p>
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10, marginBottom: 32 }}>
-        {activeTypes.map(type => {
-          const d = byType[type]
-          return (
-            <div key={type} className="stat" style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <p style={{ fontSize: 13, fontWeight: 700 }}>{type}</p>
-                <span style={{ fontSize: 18, fontWeight: 700 }}>{d.total}</span>
-              </div>
-              <StatusBar todo={d.todo} active={d.active} waiting={d.waiting} total={d.total} />
-              <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-                {d.active > 0 && (
-                  <span style={{ fontSize: 11, color: 'var(--c-blue)', display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--c-blue)', display: 'inline-block' }} />
-                    {d.active} em andamento
-                  </span>
-                )}
-                {d.waiting > 0 && (
-                  <span style={{ fontSize: 11, color: 'var(--c-warn)', display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--c-warn)', display: 'inline-block' }} />
-                    {d.waiting} aguardando
-                  </span>
-                )}
-                {d.todo > 0 && (
-                  <span style={{ fontSize: 11, color: 'var(--c-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--c-muted)', display: 'inline-block' }} />
-                    {d.todo} a fazer
-                  </span>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Por implantador */}
-      <p className="section-label" style={{ marginBottom: 14 }}>Visão por implantador</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {implantadores.map(impl => {
-          const types = Object.entries(byImpl[impl]).filter(([, d]) => d.total > 0)
-          if (types.length === 0) return null
-          const totalImpl = types.reduce((sum, [, d]) => sum + d.total, 0)
-
-          return (
-            <div key={impl} className="prod-card">
-              <div className="prod-header">
-                <p style={{ fontWeight: 700, fontSize: 14 }}>{impl}</p>
-                <span className="badge neutral">{totalImpl} task(s) pendente(s)</span>
-              </div>
-              <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {types.sort((a, b) => b[1].total - a[1].total).map(([type, d]) => (
-                  <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <p style={{ fontSize: 13, fontWeight: 600, minWidth: 160 }}>{type}</p>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', gap: 1, height: 6, borderRadius: 3, overflow: 'hidden', background: 'var(--c-border)' }}>
-                        <div style={{ width: `${(d.active / d.total) * 100}%`, background: 'var(--c-blue)' }} />
-                        <div style={{ width: `${(d.waiting / d.total) * 100}%`, background: 'var(--c-warn)' }} />
-                        <div style={{ width: `${(d.todo / d.total) * 100}%`, background: 'var(--c-border)' }} />
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      {d.active > 0 && <span className="badge info" style={{ fontSize: 10, padding: '1px 7px' }}>{d.active} and.</span>}
-                      {d.waiting > 0 && <span className="badge warn" style={{ fontSize: 10, padding: '1px 7px' }}>{d.waiting} ag.</span>}
-                      {d.todo > 0 && <span className="badge neutral" style={{ fontSize: 10, padding: '1px 7px' }}>{d.todo} fazer</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-// ─── SLA Config Tab ───────────────────────────────────────────────────────────
-
-function SlaConfigTab({ config, onSave }: { config: SlaConfig | null, onSave: (c: SlaConfig) => Promise<void> }) {
-  const [editing, setEditing] = useState<SlaConfig | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [saveError, setSaveError] = useState('')
-
-  useEffect(() => { if (config) setEditing(JSON.parse(JSON.stringify(config))) }, [config])
-
-  if (!editing) return <p style={{ color: 'var(--c-muted)', fontSize: 13 }}>Carregando...</p>
-
-  function updateSla(key: string, value: number) {
-    setEditing(prev => prev ? { ...prev, services: prev.services.map(s => s.key === key ? { ...s, slaDays: value } : s) } : prev)
-  }
-
-  function updateThreshold(value: number) {
-    setEditing(prev => prev ? { ...prev, alerts: { warningThreshold: value / 100 } } : prev)
-  }
-
-  async function handleSave() {
-    if (!editing) return
-    setSaving(true); setSaveError('')
-    try {
-      await onSave(editing)
-      setSaved(true); setTimeout(() => setSaved(false), 2500)
-    } catch (e: any) { setSaveError(e.message) }
-    finally { setSaving(false) }
-  }
-
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <div>
-          <p style={{ fontWeight: 700, fontSize: 15 }}>Configuração de SLAs</p>
-          <p style={{ fontSize: 12, color: 'var(--c-muted)', marginTop: 3 }}>Salvo no Jira (SA-34) — válido em qualquer dispositivo.</p>
-        </div>
-        <button onClick={handleSave} disabled={saving} style={{
-          fontSize: 13, padding: '8px 20px', borderRadius: 20,
-          background: saved ? 'var(--c-ok)' : 'var(--c-text)',
-          color: saved ? '#fff' : 'var(--c-bg)',
-          border: 'none', cursor: saving ? 'wait' : 'pointer',
-          fontWeight: 600, transition: 'background 0.2s', opacity: saving ? 0.7 : 1,
-        }}>
-          {saving ? 'Salvando...' : saved ? '✓ Salvo' : 'Salvar'}
-        </button>
-      </div>
-
-      {saveError && <div style={{ background: 'var(--c-err-bg)', color: 'var(--c-err)', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>Erro: {saveError}</div>}
-
-      <div style={{ marginBottom: 20 }}>
-        <p className="section-label" style={{ marginBottom: 12 }}>Fluxo sequencial</p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-          {editing.flow.map((step, i) => (
-            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {i > 0 && <span style={{ color: 'var(--c-muted)' }}>→</span>}
-              <span style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, background: 'var(--c-surface)', border: '1px solid var(--c-border)', fontWeight: 500 }}>{step}</span>
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <p className="section-label" style={{ marginBottom: 12 }}>SLA por serviço (dias úteis)</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 20 }}>
-        {editing.services.map(svc => (
-          <div key={svc.key} style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, padding: '12px 16px',
-          }}>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 600 }}>{svc.label}</p>
-              <p style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 2 }}>
-                {svc.waitClient ? 'Depende do cliente' : svc.individual ? 'Escopo individual' : svc.slaDays ? `Alerta amarelo com ${Math.ceil(svc.slaDays * editing.alerts.warningThreshold)} dia(s)` : 'Sem SLA definido'}
-              </p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {svc.waitClient && <span className="badge warn">Aguarda cliente</span>}
-              {svc.individual && <span className="badge neutral">Individual</span>}
-              {!svc.waitClient && !svc.individual && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <button onClick={() => updateSla(svc.key, Math.max(1, (svc.slaDays || 1) - 1))} style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--c-border)', background: 'var(--c-bg)', color: 'var(--c-text)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-                  <span style={{ fontSize: 20, fontWeight: 700, minWidth: 32, textAlign: 'center' }}>{svc.slaDays ?? '—'}</span>
-                  <button onClick={() => updateSla(svc.key, (svc.slaDays || 0) + 1)} style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--c-border)', background: 'var(--c-bg)', color: 'var(--c-text)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, padding: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <div>
-            <p className="section-label">Threshold de alerta amarelo</p>
-            <p style={{ fontSize: 12, color: 'var(--c-muted)', marginTop: 4 }}>Alerta 🟡 quando atingir <strong>{Math.round(editing.alerts.warningThreshold * 100)}%</strong> do SLA</p>
-          </div>
-          <span style={{ fontSize: 22, fontWeight: 700 }}>{Math.round(editing.alerts.warningThreshold * 100)}%</span>
-        </div>
-        <input type="range" min={50} max={95} step={5} value={Math.round(editing.alerts.warningThreshold * 100)} onChange={e => updateThreshold(parseInt(e.target.value))} style={{ width: '100%', accentColor: 'var(--c-warn)' }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--c-muted)', marginTop: 4 }}>
-          <span>50% — alerta mais cedo</span><span>95% — alerta mais tarde</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Main ─────────────────────────────────────────────────────────────────────
+import { useEffect, useState } from 'react'
+import { useJiraData } from '@/hooks/useJiraData'
+import ClientDrawer from '@/components/ClientDrawer'
+import IssueCard from '@/components/IssueCard'
+import DashboardTab from '@/components/DashboardTab'
+import SlaConfigTab from '@/components/SlaConfigTab'
+import NovaImplantacaoTab from '@/components/NovaImplantacaoTab'
+import { openJira, getStatusClass } from '@/lib/helpers'
+import { MONTH_NAMES } from '@/lib/constants'
+import type { Issue } from '@/types'
 
 export default function Page() {
   const now = new Date()
-  const [clients, setClients] = useState<Issue[]>([])
-  const [saIssues, setSaIssues] = useState<Issue[]>([])
-  const [summary, setSummary] = useState<Summary>({ total: 0, totalSA: 0, atrasados: 0, aguardando: 0, alertas: 0, ok: 0 })
-  const [doneTasks, setDoneTasks] = useState<DoneTask[]>([])
-  const [doneSa, setDoneSa] = useState<DoneTask[]>([])
-  const [pendingByAssignee, setPendingByAssignee] = useState<Record<string, any[]>>({})
-  const [slaConfig, setSlaConfig] = useState<SlaConfig | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [tab, setTab] = useState<'KAN' | 'SA' | 'DASHBOARD' | 'PRODUCAO' | 'CONFIG'>('KAN')
+  const [tab, setTab] = useState<'KAN' | 'SA' | 'DASHBOARD' | 'PRODUCAO' | 'CONFIG' | 'NOVA'>('KAN')
   const [alertFilter, setAlertFilter] = useState('todos')
   const [statusFilter, setStatusFilter] = useState('todos')
-  const [taskStatusFilter, setTaskStatusFilter] = useState('todos') // filtro de status das tasks
-  const [lastUpdate, setLastUpdate] = useState('')
+  const [taskStatusFilter, setTaskStatusFilter] = useState('todos')
   const [periodYear, setPeriodYear] = useState(now.getFullYear())
   const [periodMonth, setPeriodMonth] = useState(now.getMonth() + 1)
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null)
 
-  const load = useCallback(async (year = periodYear, month = periodMonth) => {
-    setLoading(true); setError('')
-    try {
-      const res = await fetch(`/api/jira?year=${year}&month=${month}`)
-      const data = await res.json()
-      if (data.error) throw new Error(data.error)
-      setClients(data.clients)
-      setSaIssues(data.saIssues)
-      setSummary(data.summary)
-      setDoneTasks(data.doneTasks || [])
-      setDoneSa(data.doneSa || [])
-      setPendingByAssignee(data.pendingTasksByAssignee || {})
-      if (data.slaConfig) setSlaConfig(data.slaConfig)
-      setLastUpdate(new Date().toLocaleTimeString('pt-BR'))
-    } catch (e: any) { setError(e.message) }
-    finally { setLoading(false) }
-  }, [periodYear, periodMonth])
+  const {
+    clients, saIssues, summary, doneTasks, doneSa,
+    pendingByAssignee, slaConfig, loading, error, lastUpdate,
+    load, handleSlaConfigSave,
+  } = useJiraData(periodYear, periodMonth)
 
   useEffect(() => { load() }, [])
   useEffect(() => {
@@ -754,16 +34,6 @@ export default function Page() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  async function handleSlaConfigSave(newConfig: SlaConfig) {
-    const res = await fetch('/api/jira', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newConfig),
-    })
-    const data = await res.json()
-    if (!res.ok || data.error) throw new Error(data.error || 'Erro ao salvar')
-    setSlaConfig(newConfig)
-  }
-
   const handlePeriod = (year: number, month: number) => {
     setPeriodYear(year); setPeriodMonth(month); load(year, month)
   }
@@ -771,7 +41,6 @@ export default function Page() {
   const implantadores = Array.from(new Set(clients.map(c => c.assignee || 'Sem responsável')))
   const availableStatuses = Array.from(new Set(clients.map(c => c.status).filter(Boolean)))
 
-  // Filtra clientes pelo status das suas tasks
   function clientMatchesTaskStatusFilter(c: Issue): boolean {
     if (taskStatusFilter === 'todos') return true
     if (taskStatusFilter === 'a-fazer') return c.tasks.some(t => getStatusClass(t.status) === 'todo')
@@ -787,7 +56,7 @@ export default function Page() {
       if (alertFilter === 'atencao') return c.alert === 'warning'
       if (alertFilter === 'aguardando') return c.alert === 'waiting'
       if (alertFilter === 'semtasks') return c.alert === 'noTasks'
-      if (!['todos','critico','atencao','aguardando','semtasks'].includes(alertFilter)) return c.assignee === alertFilter
+      if (!['todos', 'critico', 'atencao', 'aguardando', 'semtasks'].includes(alertFilter)) return c.assignee === alertFilter
       return true
     })()
     const statusMatch = statusFilter === 'todos' || c.status === statusFilter
@@ -920,6 +189,7 @@ export default function Page() {
             { key: 'DASHBOARD', label: '📊 Dashboard' },
             { key: 'PRODUCAO', label: 'Produção' },
             { key: 'CONFIG', label: '⚙ SLAs' },
+            { key: 'NOVA', label: '+ Nova Implantação' },
           ].map(t => (
             <button key={t.key} className={`tab-btn ${tab === t.key ? 'on' : ''}`}
               onClick={() => { setTab(t.key as any); setAlertFilter('todos'); setStatusFilter('todos'); setTaskStatusFilter('todos') }}>
@@ -931,7 +201,6 @@ export default function Page() {
         {/* Filtros KAN */}
         {tab === 'KAN' && (
           <div style={{ marginBottom: 16 }}>
-            {/* Linha 1: alerta + implantador */}
             <div className="filter-group">
               {[
                 { key: 'todos', label: 'Todos' },
@@ -947,14 +216,12 @@ export default function Page() {
                 <button key={impl} className={`filter-btn ${alertFilter === impl ? 'on' : ''}`} onClick={() => setAlertFilter(impl)}>{impl.split(' ')[0]}</button>
               ))}
             </div>
-            {/* Linha 2: status do Epic */}
             <div className="filter-group">
               <span style={{ fontSize: 11, color: 'var(--c-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Epic:</span>
               {['todos', ...availableStatuses].map(s => (
                 <button key={s} className={`filter-btn ${statusFilter === s ? 'on' : ''}`} onClick={() => setStatusFilter(s)}>{s === 'todos' ? 'Todos' : s}</button>
               ))}
             </div>
-            {/* Linha 3: status das tasks */}
             <div className="filter-group">
               <span style={{ fontSize: 11, color: 'var(--c-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tasks:</span>
               {[
@@ -1091,6 +358,9 @@ export default function Page() {
 
         {/* Config */}
         {tab === 'CONFIG' && <SlaConfigTab config={slaConfig} onSave={handleSlaConfigSave} />}
+
+        {/* Nova Implantação */}
+        {tab === 'NOVA' && <NovaImplantacaoTab />}
       </div>
     </>
   )
