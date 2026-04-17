@@ -272,7 +272,7 @@ export async function GET(request: Request) {
 
     // SA — Issues abertas
     const saJql = encodeURIComponent(
-      `project=${PROJECT_SA} AND status!="Concluído" AND status!="Cancelado" AND summary!="CONFIG — SLAs"`
+      `project=${PROJECT_SA} AND status!="Concluído" AND status!="Cancelado" AND issue!=SA-34`
     )
     const saData = await jiraFetch(
       `/search/jql?jql=${saJql}&maxResults=100&fields=summary,status,assignee,duedate,created,updated`
