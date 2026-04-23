@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useJiraData } from '@/hooks/useJiraData'
 import ClientDrawer from '@/components/ClientDrawer'
 import IssueCard from '@/components/IssueCard'
@@ -158,15 +159,9 @@ export default function Page() {
             {lastUpdate && <p style={{ fontSize: 12, color: 'var(--c-muted)', marginTop: 3 }}>Atualizado às {lastUpdate}</p>}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <a
-              href="https://maiconlucas.github.io/dashboard-suporte"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="filter-btn"
-              style={{ fontWeight: 500, textDecoration: 'none', color: 'var(--c-text)' }}
-            >
-              📊 Painel Suporte
-            </a>
+            <Link href="/suporte" className="filter-btn" style={{ fontWeight: 500, textDecoration: 'none', color: 'var(--c-text)' }}>
+              📊 Suporte
+            </Link>
             <button className="filter-btn" onClick={() => load()} disabled={loading} style={{ fontWeight: 500 }}>
               {loading ? '...' : '↻ Atualizar'}
             </button>
