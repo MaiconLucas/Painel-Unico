@@ -157,9 +157,20 @@ export default function Page() {
             <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>Painel Único</h1>
             {lastUpdate && <p style={{ fontSize: 12, color: 'var(--c-muted)', marginTop: 3 }}>Atualizado às {lastUpdate}</p>}
           </div>
-          <button className="filter-btn" onClick={() => load()} disabled={loading} style={{ fontWeight: 500 }}>
-            {loading ? '...' : '↻ Atualizar'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <a
+              href="https://maiconlucas.github.io/dashboard-suporte"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="filter-btn"
+              style={{ fontWeight: 500, textDecoration: 'none', color: 'var(--c-text)' }}
+            >
+              📊 Painel Suporte
+            </a>
+            <button className="filter-btn" onClick={() => load()} disabled={loading} style={{ fontWeight: 500 }}>
+              {loading ? '...' : '↻ Atualizar'}
+            </button>
+          </div>
         </div>
 
         {error && <div style={{ background: 'var(--c-err-bg)', color: 'var(--c-err)', padding: '12px 14px', borderRadius: 8, marginBottom: 20, fontSize: 13 }}>Erro: {error}</div>}
