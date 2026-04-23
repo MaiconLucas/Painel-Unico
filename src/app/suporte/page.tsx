@@ -225,7 +225,11 @@ const CSS = `
 .sr-modal-body{overflow-y:auto;flex:1;}
 .sr-modal-body::-webkit-scrollbar{width:4px;}.sr-modal-body::-webkit-scrollbar-track{background:var(--bg3);}.sr-modal-body::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px;}
 .sr-modal-table{width:100%;border-collapse:collapse;}
-.sr-modal-table thead th{font-family:var(--mono);font-size:10px;color:var(--text3);text-align:left;padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.06em;position:sticky;top:0;}
+.sr-modal-table thead th{font-family:var(--mono);font-size:10px;color:var(--text3);text-align:left;padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.06em;position:sticky;top:0;z-index:2;}
+.sr-modal-filter-row th{position:sticky;top:33px;z-index:1;background:var(--bg3);padding:4px 8px;border-bottom:1px solid var(--border2);}
+.sr-modal-filter-input{width:100%;background:var(--bg4);border:1px solid var(--border2);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:4px 8px;outline:none;transition:border-color .15s;}
+.sr-modal-filter-input:focus{border-color:var(--accent);}
+.sr-modal-filter-input::placeholder{color:var(--text3);}
 .sr-modal-table tbody td{padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px;}
 .sr-modal-table tbody tr:last-child td{border-bottom:none;}
 .sr-modal-table tbody tr:hover td{background:var(--bg3);}
@@ -264,7 +268,10 @@ export default function SuportePage() {
   const chartsRef  = useRef<Record<string, InstanceType<typeof Chart>>>({})
 
   const [kpiModal, setKpiModal] = useState<string | null>(null)
+  const [modalFilters, setModalFilters] = useState<string[]>(['', '', '', '', ''])
   const [showDebug, setShowDebug] = useState(false)
+
+  useEffect(() => setModalFilters(['', '', '', '', '']), [kpiModal])
 
   // Set Chart.js defaults once
   useEffect(() => {
@@ -483,29 +490,85 @@ export default function SuportePage() {
         </>
       )
     }
-    const rows = (() => {
-      if (kpiModal === 'open') return chats
-      if (kpiModal === 'pending') return chats.filter(isPending).sort((a, b) => elapsed(b.lastRcvMsgTime || b.beginTime) - elapsed(a.lastRcvMsgTime || a.beginTime))
-      return chats.filter(c => !isPending(c)).sort((a, b) => elapsed(b.lastSendMsgTime || b.beginTime) - elapsed(a.lastSendMsgTime || a.beginTime))
-    })()
+
     const titles: Record<string, string> = { open: 'Chats abertos agora', pending: 'Aguardando resposta', answered: 'Agente respondeu — aguardando cliente' }
     const headers: Record<string, string[]> = {
       open: ['Cliente', 'Fila', 'Atendente', 'Situação', 'Espera'],
       pending: ['Cliente', 'Fila', 'Atendente', 'Aguardando', 'Motivo'],
       answered: ['Cliente', 'Fila', 'Atendente', 'Últ. resposta', 'Início'],
     }
+
+    const allRows = (() => {
+      if (kpiModal === 'open') return chats
+      if (kpiModal === 'pending') return chats.filter(isPending).sort((a, b) => elapsed(b.lastRcvMsgTime || b.beginTime) - elapsed(a.lastRcvMsgTime || a.beginTime))
+      return chats.filter(c => !isPending(c)).sort((a, b) => elapsed(b.lastSendMsgTime || b.beginTime) - elapsed(a.lastSendMsgTime || a.beginTime))
+    })()
+
+    function rowText(c: SupportChat, col: number): string {
+      const q = queues.find(q => q.id === c._qId)
+      const a = agentMap[c.userId!]
+      if (col === 0) return (c.clientName || c.clientNumber || c.clientId || '').toLowerCase()
+      if (col === 1) return (q?.name || '').toLowerCase()
+      if (col === 2) return (a ? a.name : c.userId ? 'ID ' + c.userId : 'na fila').toLowerCase()
+      if (col === 3) {
+        if (kpiModal === 'open') {
+          if (!c.userId || c.userId === 0) return 'na fila'
+          if (c.onIvr) return 'ura'
+          if (!c.userResponded) return 'aguard. 1ª resp.'
+          if (c.lastRcvMsgTime && c.lastSendMsgTime && c.lastRcvMsgTime > c.lastSendMsgTime) return 'cliente respondeu'
+          return 'agente respondeu'
+        }
+        return fElapsed(kpiModal === 'pending' ? (c.lastRcvMsgTime || c.beginTime) : (c.lastSendMsgTime || c.beginTime)).toLowerCase()
+      }
+      if (col === 4) {
+        if (kpiModal === 'open') return fElapsed(c.lastRcvMsgTime || c.beginTime).toLowerCase()
+        if (kpiModal === 'pending') return ((!c.userId || c.userId === 0 || c.onQueue) ? 'na fila' : !c.userResponded ? 'nunca respondeu' : 'cliente respondeu depois').toLowerCase()
+        return fElapsed(c.beginTime).toLowerCase()
+      }
+      return ''
+    }
+
+    const rows = allRows.filter(c =>
+      modalFilters.every((f, i) => !f || rowText(c, i).includes(f.toLowerCase()))
+    )
+    const hasFilter = modalFilters.some(f => f)
+
     return (
       <>
         <div className="sr-modal-header">
-          <div className="sr-modal-title">{titles[kpiModal]} <span className="sr-modal-count">{rows.length}</span></div>
+          <div className="sr-modal-title">
+            {titles[kpiModal]}
+            <span className="sr-modal-count">
+              {hasFilter ? `${rows.length} / ${allRows.length}` : rows.length}
+            </span>
+          </div>
           <button className="sr-modal-close" onClick={() => setKpiModal(null)}>×</button>
         </div>
         <div className="sr-modal-body">
           <table className="sr-modal-table">
-            <thead><tr>{headers[kpiModal].map(h => <th key={h}>{h}</th>)}</tr></thead>
+            <thead>
+              <tr>{headers[kpiModal].map(h => <th key={h}>{h}</th>)}</tr>
+              <tr className="sr-modal-filter-row">
+                {headers[kpiModal].map((_, i) => (
+                  <th key={i} className="sr-modal-filter-th">
+                    <input
+                      className="sr-modal-filter-input"
+                      type="text"
+                      placeholder="filtrar…"
+                      value={modalFilters[i] || ''}
+                      onChange={e => {
+                        const next = [...modalFilters]
+                        next[i] = e.target.value
+                        setModalFilters(next)
+                      }}
+                    />
+                  </th>
+                ))}
+              </tr>
+            </thead>
             <tbody>
               {rows.length === 0
-                ? <tr><td colSpan={5} className="sr-modal-empty">Sem registros</td></tr>
+                ? <tr><td colSpan={5} className="sr-modal-empty">{hasFilter ? 'Nenhum resultado para os filtros aplicados' : 'Sem registros'}</td></tr>
                 : rows.map((c, i) => {
                   const q = queues.find(q => q.id === c._qId)
                   const a = agentMap[c.userId!]
