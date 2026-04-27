@@ -18,6 +18,7 @@ export default function Page() {
   const [alertFilter, setAlertFilter] = useState('todos')
   const [statusFilter, setStatusFilter] = useState('todos')
   const [taskStatusFilter, setTaskStatusFilter] = useState('todos')
+  const [searchQuery, setSearchQuery] = useState('')
   const [periodYear, setPeriodYear] = useState(now.getFullYear())
   const [periodMonth, setPeriodMonth] = useState(now.getMonth() + 1)
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null)
@@ -63,7 +64,8 @@ export default function Page() {
     })()
     const statusMatch = statusFilter === 'todos' || c.status === statusFilter
     const taskMatch = clientMatchesTaskStatusFilter(c)
-    return alertMatch && statusMatch && taskMatch
+    const searchMatch = !searchQuery.trim() || c.name.toLowerCase().includes(searchQuery.toLowerCase())
+    return alertMatch && statusMatch && taskMatch && searchMatch
   })
 
   const filteredSA = saIssues.filter(c => {
@@ -199,7 +201,7 @@ export default function Page() {
             { key: 'NOVA', label: '+ Nova Implantação' },
           ].map(t => (
             <button key={t.key} className={`tab-btn ${tab === t.key ? 'on' : ''}`}
-              onClick={() => { setTab(t.key as any); setAlertFilter('todos'); setStatusFilter('todos'); setTaskStatusFilter('todos') }}>
+              onClick={() => { setTab(t.key as any); setAlertFilter('todos'); setStatusFilter('todos'); setTaskStatusFilter('todos'); setSearchQuery('') }}>
               {t.label}
             </button>
           ))}
@@ -208,6 +210,17 @@ export default function Page() {
         {/* Filtros KAN */}
         {tab === 'KAN' && (
           <div style={{ marginBottom: 16 }}>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Pesquisar cliente..."
+              style={{
+                width: '100%', fontSize: 13, padding: '8px 12px', borderRadius: 8,
+                border: '1px solid var(--c-border)', background: 'var(--c-surface)',
+                color: 'var(--c-text)', outline: 'none', fontFamily: 'inherit', marginBottom: 10,
+              }}
+            />
             <div className="filter-group">
               {[
                 { key: 'todos', label: 'Todos' },

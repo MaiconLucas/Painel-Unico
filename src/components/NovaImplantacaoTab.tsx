@@ -13,16 +13,17 @@ export default function NovaImplantacaoTab() {
   const [freeTasksState, setFreeTasksState] = useState<Record<string, boolean>>(
     Object.fromEntries(FREE_TASKS.map(t => [t, false]))
   )
+  const [iaType, setIaType] = useState('')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState<{ epicKey: string; epicUrl: string } | null>(null)
   const [error, setError] = useState('')
 
   const selectedAssignee = assigneeIndex !== '' ? IMPLANTADORES[parseInt(assigneeIndex)] : null
-  const isDisabled = !title.trim() || !selectedAssignee || loading
+  const isDisabled = !title.trim() || !selectedAssignee || loading || (freeTasksState['IA'] && !iaType.trim())
 
   const selectedTasks = [
     ...TASK_ORDER.filter(t => sequentialTasks[t]),
-    ...FREE_TASKS.filter(t => freeTasksState[t]),
+    ...FREE_TASKS.filter(t => freeTasksState[t]).map(t => t === 'IA' ? `IA (${iaType.trim()})` : t),
   ]
 
   async function handleSubmit(e: React.FormEvent) {
@@ -52,6 +53,7 @@ export default function NovaImplantacaoTab() {
       setAssigneeIndex('')
       setSequentialTasks(Object.fromEntries(TASK_ORDER.map(t => [t, false])))
       setFreeTasksState(Object.fromEntries(FREE_TASKS.map(t => [t, false])))
+      setIaType('')
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -169,23 +171,39 @@ export default function NovaImplantacaoTab() {
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {FREE_TASKS.map(task => (
-              <label key={task} style={{
-                display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 14,
-                padding: '8px 12px', borderRadius: 8,
-                background: freeTasksState[task] ? 'var(--c-blue-bg)' : 'var(--c-surface)',
-                border: `1px solid ${freeTasksState[task] ? 'var(--c-blue)' : 'var(--c-border)'}`,
-                transition: 'all 0.1s',
-              }}>
-                <input
-                  type="checkbox"
-                  checked={freeTasksState[task] || false}
-                  onChange={e => setFreeTasksState(prev => ({ ...prev, [task]: e.target.checked }))}
-                  style={{ width: 16, height: 16, accentColor: 'var(--c-blue)', cursor: 'pointer' }}
-                />
-                <span style={{ fontWeight: freeTasksState[task] ? 600 : 400, color: freeTasksState[task] ? 'var(--c-blue)' : 'var(--c-text)' }}>
-                  {task}
-                </span>
-              </label>
+              <div key={task}>
+                <label style={{
+                  display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 14,
+                  padding: '8px 12px', borderRadius: 8,
+                  background: freeTasksState[task] ? 'var(--c-blue-bg)' : 'var(--c-surface)',
+                  border: `1px solid ${freeTasksState[task] ? 'var(--c-blue)' : 'var(--c-border)'}`,
+                  transition: 'all 0.1s',
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={freeTasksState[task] || false}
+                    onChange={e => setFreeTasksState(prev => ({ ...prev, [task]: e.target.checked }))}
+                    style={{ width: 16, height: 16, accentColor: 'var(--c-blue)', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontWeight: freeTasksState[task] ? 600 : 400, color: freeTasksState[task] ? 'var(--c-blue)' : 'var(--c-text)' }}>
+                    {task}
+                  </span>
+                </label>
+                {task === 'IA' && freeTasksState['IA'] && (
+                  <input
+                    type="text"
+                    value={iaType}
+                    onChange={e => setIaType(e.target.value)}
+                    placeholder="Qual tipo de IA? (ex: ChatGPT, Gemini...)"
+                    required
+                    style={{
+                      width: '100%', fontSize: 13, padding: '8px 12px', borderRadius: 8,
+                      border: '1px solid var(--c-blue)', background: 'var(--c-blue-bg)',
+                      color: 'var(--c-text)', outline: 'none', fontFamily: 'inherit', marginTop: 6,
+                    }}
+                  />
+                )}
+              </div>
             ))}
           </div>
         </div>

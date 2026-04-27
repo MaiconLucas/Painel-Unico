@@ -41,6 +41,17 @@ export async function createEpicHandler(request: Request) {
       return NextResponse.json({ error: 'Título e implantador são obrigatórios' }, { status: 400 })
     }
 
+    const checkJql = encodeURIComponent(
+      `project=${PROJECT_KAN} AND issuetype in ("Épico","Epic","épico") AND summary ~ "${title.replace(/"/g, '\\"')}"`
+    )
+    const checkData = await jiraFetch(`/search/jql?jql=${checkJql}&maxResults=10&fields=summary`)
+    const duplicate = (checkData.issues || []).find(
+      (i: any) => i.fields.summary.toLowerCase().trim() === title.toLowerCase().trim()
+    )
+    if (duplicate) {
+      return NextResponse.json({ error: `Já existe um Epic com esse título: ${duplicate.key}` }, { status: 409 })
+    }
+
     const descriptionText = [description, assigneeName ? `Implantador: ${assigneeName}` : '']
       .filter(Boolean)
       .join('\n')
