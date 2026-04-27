@@ -15,6 +15,7 @@ export type Issue = {
   services: string | null
   plano: string | null
   tasks: Task[]
+  allTasks: Task[]
   allTasksCount: number
   doneTasksCount: number
   overdue: boolean

@@ -1,8 +1,11 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { alertBg, alertColor, alertIcon, alertLabel, getStatusClass, openJira } from '@/lib/helpers'
 import { TASK_ORDER } from '@/lib/constants'
 import type { Issue, SlaConfig, Task } from '@/types'
+
+type Comment = { id: string; author: string; body: string; created: string }
 
 export default function ClientDrawer({ issue, slaConfig, onClose }: {
   issue: Issue
@@ -11,14 +14,56 @@ export default function ClientDrawer({ issue, slaConfig, onClose }: {
 }) {
   const flow = slaConfig?.flow || TASK_ORDER
 
+  const [comments, setComments] = useState<Comment[]>([])
+  const [loadingComments, setLoadingComments] = useState(true)
+  const [newComment, setNewComment] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [commentError, setCommentError] = useState('')
+
+  useEffect(() => {
+    setLoadingComments(true)
+    fetch(`/api/jira/comment?key=${issue.key}`)
+      .then(r => r.json())
+      .then(d => setComments(d.comments || []))
+      .catch(() => setComments([]))
+      .finally(() => setLoadingComments(false))
+  }, [issue.key])
+
+  async function handleAddComment(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newComment.trim() || submitting) return
+    setSubmitting(true)
+    setCommentError('')
+    try {
+      const res = await fetch('/api/jira/comment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: issue.key, text: newComment }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error || 'Erro ao enviar')
+      setNewComment('')
+      // Reload comments
+      const updated = await fetch(`/api/jira/comment?key=${issue.key}`).then(r => r.json())
+      setComments(updated.comments || [])
+    } catch (err: any) {
+      setCommentError(err.message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // Use allTasks (includes concluded) for timeline
+  const allTasks = issue.allTasks ?? issue.tasks
+
   const timelineSteps = flow.map(stepKey => {
-    const task = issue.tasks.find(t => t.summary?.toLowerCase().includes(stepKey.toLowerCase()))
+    const task = allTasks.find(t => t.summary?.toLowerCase().includes(stepKey.toLowerCase()))
     const contracted = issue.services?.toLowerCase().includes(stepKey.toLowerCase())
     const hasTask = !!task
     return { stepKey, task, show: contracted || hasTask }
   }).filter(s => s.show)
 
-  const freeTasks = issue.tasks.filter(t =>
+  const freeTasks = allTasks.filter(t =>
     !flow.some(f => t.summary?.toLowerCase().includes(f.toLowerCase()))
   )
 
@@ -42,16 +87,6 @@ export default function ClientDrawer({ issue, slaConfig, onClose }: {
       case 'active':  return '●'
       case 'waiting': return '⏸'
       default:        return '○'
-    }
-  }
-
-  function getStepLabel(state: string) {
-    switch (state) {
-      case 'done':    return 'Concluído'
-      case 'active':  return 'Em andamento'
-      case 'waiting': return 'Aguardando cliente'
-      case 'pending': return 'A fazer'
-      default:        return 'Não iniciado'
     }
   }
 
@@ -198,7 +233,7 @@ export default function ClientDrawer({ issue, slaConfig, onClose }: {
                           {isCurrent && <span style={{ fontSize: 10, marginLeft: 6, color: colors.color, fontWeight: 700 }}>← AGORA</span>}
                         </p>
                         <p style={{ fontSize: 11, color: colors.color, marginTop: 2, fontWeight: 500 }}>
-                          {getStepLabel(state)}
+                          {task ? task.status : 'Task não criada'}
                         </p>
                       </div>
                       {task && (
@@ -235,7 +270,7 @@ export default function ClientDrawer({ issue, slaConfig, onClose }: {
                       <span style={{ fontSize: 13, color: colors.color }}>{getStepIcon(state)}</span>
                       <div style={{ flex: 1 }}>
                         <p style={{ fontSize: 13, fontWeight: 600 }}>{task.summary.replace(/.*?[-–]\s*/, '').trim()}</p>
-                        <p style={{ fontSize: 11, color: colors.color, marginTop: 1 }}>{getStepLabel(state)}</p>
+                        <p style={{ fontSize: 11, color: colors.color, marginTop: 1 }}>{task.status}</p>
                       </div>
                       <button onClick={(e) => openJira(task.key, e)} style={{
                         fontSize: 10, padding: '2px 8px', borderRadius: 20,
@@ -262,6 +297,65 @@ export default function ClientDrawer({ issue, slaConfig, onClose }: {
               </div>
             </div>
           )}
+
+          {/* Comentários */}
+          <div style={{ marginTop: 28, borderTop: '1px solid var(--c-border)', paddingTop: 20 }}>
+            <p className="section-label" style={{ marginBottom: 14 }}>Comentários</p>
+
+            <form onSubmit={handleAddComment} style={{ marginBottom: 20 }}>
+              <textarea
+                value={newComment}
+                onChange={e => setNewComment(e.target.value)}
+                placeholder="Adicionar comentário..."
+                rows={3}
+                style={{
+                  width: '100%', fontSize: 13, padding: '10px 12px', borderRadius: 8,
+                  border: '1px solid var(--c-border)', background: 'var(--c-bg)',
+                  color: 'var(--c-text)', outline: 'none', fontFamily: 'inherit',
+                  resize: 'vertical', display: 'block',
+                }}
+              />
+              {commentError && (
+                <p style={{ fontSize: 11, color: 'var(--c-err)', marginTop: 4 }}>{commentError}</p>
+              )}
+              <button
+                type="submit"
+                disabled={!newComment.trim() || submitting}
+                style={{
+                  marginTop: 8, fontSize: 12, padding: '6px 16px', borderRadius: 20,
+                  background: (!newComment.trim() || submitting) ? 'var(--c-border)' : 'var(--c-text)',
+                  color: (!newComment.trim() || submitting) ? 'var(--c-muted)' : 'var(--c-bg)',
+                  border: 'none', cursor: (!newComment.trim() || submitting) ? 'not-allowed' : 'pointer',
+                  fontWeight: 600, transition: 'all 0.15s',
+                }}
+              >
+                {submitting ? 'Enviando...' : 'Comentar'}
+              </button>
+            </form>
+
+            {loadingComments ? (
+              <p style={{ fontSize: 12, color: 'var(--c-muted)' }}>Carregando comentários...</p>
+            ) : comments.length === 0 ? (
+              <p style={{ fontSize: 12, color: 'var(--c-muted)' }}>Nenhum comentário ainda.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {comments.map(c => (
+                  <div key={c.id} style={{
+                    padding: '10px 14px', borderRadius: 8,
+                    background: 'var(--c-bg)', border: '1px solid var(--c-border)',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-text)' }}>{c.author}</span>
+                      <span style={{ fontSize: 10, color: 'var(--c-muted)' }}>
+                        {new Date(c.created).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--c-text)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.body}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </>

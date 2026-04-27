@@ -61,6 +61,12 @@ export async function GET(request: Request) {
       const pendingTasks = tasks.filter((t: any) => !t.status?.toLowerCase().includes('conclu'))
       const stageAlert = calcStageAlert(tasks, epic.fields.created, slaConfig)
 
+      // Strip changelog before sending to client
+      const stripChangelog = (t: any) => {
+        const { changelog: _cl, ...rest } = t
+        return rest
+      }
+
       return {
         key: epic.key,
         name: epic.fields.summary,
@@ -70,7 +76,8 @@ export async function GET(request: Request) {
         score,
         services,
         plano,
-        tasks: pendingTasks,
+        tasks: pendingTasks.map(stripChangelog),
+        allTasks: tasks.map(stripChangelog),
         allTasksCount: tasks.length,
         doneTasksCount: tasks.filter((t: any) => t.status?.toLowerCase().includes('conclu')).length,
         overdue: dueDate ? dueDate < now : false,
