@@ -6,6 +6,8 @@ import { TASK_ORDER } from '@/lib/constants'
 import type { Issue, SlaConfig, Task } from '@/types'
 
 type Comment = { id: string; author: string; body: string; created: string }
+type Transition = { id: string; name: string; statusCategory: string }
+type TaskStatus = { key: string; status: string }
 
 export default function ClientDrawer({ issue, slaConfig, onClose }: {
   issue: Issue
@@ -20,6 +22,12 @@ export default function ClientDrawer({ issue, slaConfig, onClose }: {
   const [submitting, setSubmitting] = useState(false)
   const [commentError, setCommentError] = useState('')
 
+  const [taskStatuses, setTaskStatuses] = useState<Record<string, string>>({})
+  const [expandedTask, setExpandedTask] = useState<string | null>(null)
+  const [transitions, setTransitions] = useState<Record<string, Transition[]>>({})
+  const [loadingTransitions, setLoadingTransitions] = useState<string | null>(null)
+  const [applyingTransition, setApplyingTransition] = useState(false)
+
   useEffect(() => {
     setLoadingComments(true)
     fetch(`/api/jira/comment?key=${issue.key}`)
@@ -28,6 +36,38 @@ export default function ClientDrawer({ issue, slaConfig, onClose }: {
       .catch(() => setComments([]))
       .finally(() => setLoadingComments(false))
   }, [issue.key])
+
+  async function handleExpandTask(taskKey: string) {
+    if (expandedTask === taskKey) { setExpandedTask(null); return }
+    setExpandedTask(taskKey)
+    if (transitions[taskKey]) return
+    setLoadingTransitions(taskKey)
+    try {
+      const data = await fetch(`/api/jira/transition?key=${taskKey}`).then(r => r.json())
+      setTransitions(prev => ({ ...prev, [taskKey]: data.transitions || [] }))
+    } finally {
+      setLoadingTransitions(null)
+    }
+  }
+
+  async function handleTransition(taskKey: string, transitionId: string, transitionName: string) {
+    setApplyingTransition(true)
+    try {
+      const res = await fetch('/api/jira/transition', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: taskKey, transitionId }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error || 'Erro ao atualizar')
+      setTaskStatuses(prev => ({ ...prev, [taskKey]: transitionName }))
+      setExpandedTask(null)
+      // Invalidate cached transitions so next open re-fetches
+      setTransitions(prev => { const n = { ...prev }; delete n[taskKey]; return n })
+    } finally {
+      setApplyingTransition(false)
+    }
+  }
 
   async function handleAddComment(e: React.FormEvent) {
     e.preventDefault()
@@ -67,9 +107,13 @@ export default function ClientDrawer({ issue, slaConfig, onClose }: {
     !flow.some(f => t.summary?.toLowerCase().includes(f.toLowerCase()))
   )
 
+  function getEffectiveStatus(task: Task): string {
+    return taskStatuses[task.key] ?? task.status
+  }
+
   function getStepState(task: Task | undefined): 'done' | 'active' | 'waiting' | 'pending' | 'missing' {
     if (!task) return 'missing'
-    return getStatusClass(task.status) as any
+    return getStatusClass(getEffectiveStatus(task)) as any
   }
 
   function getStepColors(state: string) {
@@ -233,18 +277,55 @@ export default function ClientDrawer({ issue, slaConfig, onClose }: {
                           {isCurrent && <span style={{ fontSize: 10, marginLeft: 6, color: colors.color, fontWeight: 700 }}>← AGORA</span>}
                         </p>
                         <p style={{ fontSize: 11, color: colors.color, marginTop: 2, fontWeight: 500 }}>
-                          {task ? task.status : 'Task não criada'}
+                          {task ? getEffectiveStatus(task) : 'Task não criada'}
                         </p>
                       </div>
                       {task && (
-                        <button onClick={(e) => openJira(task.key, e)} style={{
-                          fontSize: 10, padding: '2px 8px', borderRadius: 20,
-                          background: 'var(--c-bg)', border: '1px solid var(--c-border)',
-                          color: 'var(--c-muted)', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-                        }}>{task.key} ↗</button>
+                        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleExpandTask(task.key) }}
+                            title="Alterar status"
+                            style={{
+                              fontSize: 10, padding: '2px 8px', borderRadius: 20,
+                              background: expandedTask === task.key ? 'var(--c-text)' : 'var(--c-bg)',
+                              border: '1px solid var(--c-border)',
+                              color: expandedTask === task.key ? 'var(--c-bg)' : 'var(--c-muted)',
+                              cursor: 'pointer', whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {loadingTransitions === task.key ? '...' : '⟳ Status'}
+                          </button>
+                          <button onClick={(e) => openJira(task.key, e)} style={{
+                            fontSize: 10, padding: '2px 8px', borderRadius: 20,
+                            background: 'var(--c-bg)', border: '1px solid var(--c-border)',
+                            color: 'var(--c-muted)', cursor: 'pointer', whiteSpace: 'nowrap',
+                          }}>{task.key} ↗</button>
+                        </div>
                       )}
                     </div>
-                    {task && (state === 'active' || state === 'waiting') && (
+
+                    {task && expandedTask === task.key && (
+                      <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {(transitions[task.key] || []).map(tr => (
+                          <button
+                            key={tr.id}
+                            disabled={applyingTransition}
+                            onClick={() => handleTransition(task.key, tr.id, tr.name)}
+                            style={{
+                              fontSize: 11, padding: '4px 12px', borderRadius: 20,
+                              background: 'var(--c-surface)', border: '1px solid var(--c-border)',
+                              color: 'var(--c-text)', cursor: applyingTransition ? 'not-allowed' : 'pointer',
+                              fontWeight: 500, transition: 'all 0.1s',
+                              opacity: applyingTransition ? 0.5 : 1,
+                            }}
+                          >
+                            → {tr.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {task && (state === 'active' || state === 'waiting') && expandedTask !== task.key && (
                       <div style={{ marginTop: 6, padding: '6px 10px', borderRadius: 6, background: colors.bg, fontSize: 11, color: colors.color }}>
                         {state === 'active' ? issue.alertReason : `Aguardando resposta do cliente · ${issue.daysInStage} dia(s)`}
                       </div>
@@ -270,13 +351,40 @@ export default function ClientDrawer({ issue, slaConfig, onClose }: {
                       <span style={{ fontSize: 13, color: colors.color }}>{getStepIcon(state)}</span>
                       <div style={{ flex: 1 }}>
                         <p style={{ fontSize: 13, fontWeight: 600 }}>{task.summary.replace(/.*?[-–]\s*/, '').trim()}</p>
-                        <p style={{ fontSize: 11, color: colors.color, marginTop: 1 }}>{task.status}</p>
+                        <p style={{ fontSize: 11, color: colors.color, marginTop: 1 }}>{getEffectiveStatus(task)}</p>
+                        {expandedTask === task.key && (
+                          <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {(transitions[task.key] || []).map(tr => (
+                              <button key={tr.id} disabled={applyingTransition}
+                                onClick={() => handleTransition(task.key, tr.id, tr.name)}
+                                style={{
+                                  fontSize: 11, padding: '4px 12px', borderRadius: 20,
+                                  background: 'var(--c-surface)', border: '1px solid var(--c-border)',
+                                  color: 'var(--c-text)', cursor: applyingTransition ? 'not-allowed' : 'pointer',
+                                  fontWeight: 500, opacity: applyingTransition ? 0.5 : 1,
+                                }}
+                              >→ {tr.name}</button>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <button onClick={(e) => openJira(task.key, e)} style={{
-                        fontSize: 10, padding: '2px 8px', borderRadius: 20,
-                        background: 'var(--c-surface)', border: '1px solid var(--c-border)',
-                        color: 'var(--c-muted)', cursor: 'pointer',
-                      }}>{task.key} ↗</button>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleExpandTask(task.key) }}
+                          style={{
+                            fontSize: 10, padding: '2px 8px', borderRadius: 20,
+                            background: expandedTask === task.key ? 'var(--c-text)' : 'var(--c-surface)',
+                            border: '1px solid var(--c-border)',
+                            color: expandedTask === task.key ? 'var(--c-bg)' : 'var(--c-muted)',
+                            cursor: 'pointer',
+                          }}
+                        >{loadingTransitions === task.key ? '...' : '⟳'}</button>
+                        <button onClick={(e) => openJira(task.key, e)} style={{
+                          fontSize: 10, padding: '2px 8px', borderRadius: 20,
+                          background: 'var(--c-surface)', border: '1px solid var(--c-border)',
+                          color: 'var(--c-muted)', cursor: 'pointer',
+                        }}>{task.key} ↗</button>
+                      </div>
                     </div>
                   )
                 })}
