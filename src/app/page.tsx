@@ -52,6 +52,7 @@ export default function Page() {
   }
 
   const filteredKAN = clients.filter(c => {
+    if (c.alert === 'done') return false
     const alertMatch = (() => {
       if (alertFilter === 'critico') return c.alert === 'critical'
       if (alertFilter === 'atencao') return c.alert === 'warning'
