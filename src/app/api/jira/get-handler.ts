@@ -39,7 +39,7 @@ export async function GET(request: Request) {
       try {
         const taskJql = encodeURIComponent(`project=${PROJECT_KAN} AND parent=${epic.key}`)
         const tasksData = await jiraFetch(
-          `/search/jql?jql=${taskJql}&maxResults=50&fields=summary,status,assignee,created,updated`
+          `/search/jql?jql=${taskJql}&maxResults=50&fields=summary,status,assignee,created,updated&expand=changelog`
         )
         tasks = (tasksData.issues || []).map((t: any) => ({
           key: t.key,
@@ -48,6 +48,7 @@ export async function GET(request: Request) {
           assignee: t.fields.assignee?.displayName || null,
           createdAt: t.fields.created,
           updatedAt: t.fields.updated,
+          changelog: t.changelog,
         }))
       } catch (_) {}
 
@@ -169,7 +170,7 @@ export async function GET(request: Request) {
 
     const allIssues = [...clients, ...saIssues]
     const atrasados = allIssues.filter((c: any) => c.alert === 'critical').length
-    const aguardando = allIssues.filter((c: any) => c.alert === 'waiting').length
+    const aguardando = allIssues.filter((c: any) => c.alert === 'waiting' || c.alert === 'bloqueado').length
     const alertas = allIssues.filter((c: any) => c.alert === 'warning').length
     const ok = allIssues.filter((c: any) => c.alert === 'ok' || c.alert === 'done').length
 

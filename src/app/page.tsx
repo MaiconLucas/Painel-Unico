@@ -57,7 +57,7 @@ export default function Page() {
     const alertMatch = (() => {
       if (alertFilter === 'critico') return c.alert === 'critical'
       if (alertFilter === 'atencao') return c.alert === 'warning'
-      if (alertFilter === 'aguardando') return c.alert === 'waiting'
+      if (alertFilter === 'aguardando') return c.alert === 'waiting' || c.alert === 'bloqueado'
       if (alertFilter === 'semtasks') return c.alert === 'noTasks'
       if (!['todos', 'critico', 'atencao', 'aguardando', 'semtasks'].includes(alertFilter)) return c.assignee === alertFilter
       return true
@@ -83,7 +83,7 @@ export default function Page() {
   })
   Object.keys(byImpl).forEach(k => {
     byImpl[k].sort((a, b) => {
-      const order: Record<string, number> = { critical: 0, warning: 1, waiting: 2, noTasks: 3, ok: 4, done: 5 }
+      const order: Record<string, number> = { critical: 0, warning: 1, waiting: 2, bloqueado: 2, noTasks: 3, ok: 4, done: 5 }
       return (order[a.alert] ?? 9) - (order[b.alert] ?? 9)
     })
   })
@@ -295,6 +295,7 @@ export default function Page() {
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     {cls.filter(c => c.alert === 'critical').length > 0 && <span className="badge err">{cls.filter(c => c.alert === 'critical').length} crítico(s)</span>}
                     {cls.filter(c => c.alert === 'warning').length > 0 && <span className="badge warn">{cls.filter(c => c.alert === 'warning').length} atenção</span>}
+                    {cls.filter(c => c.alert === 'bloqueado').length > 0 && <span className="badge neutral">{cls.filter(c => c.alert === 'bloqueado').length} bloqueado(s)</span>}
                     <span className="section-label">{cls.length} cliente(s)</span>
                   </div>
                 </div>
