@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { jiraPut, jiraPost, PROJECT_KAN } from '@/lib/jira'
+import { jiraFetch, jiraPut, jiraPost, PROJECT_KAN } from '@/lib/jira'
 import { SLA_CONFIG_ISSUE } from '@/lib/constants'
 
 export async function POST(request: Request) {
