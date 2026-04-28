@@ -8,13 +8,14 @@ import IssueCard from '@/components/IssueCard'
 import DashboardTab from '@/components/DashboardTab'
 import SlaConfigTab from '@/components/SlaConfigTab'
 import NovaImplantacaoTab from '@/components/NovaImplantacaoTab'
+import NovoServicoTab from '@/components/NovoServicoTab'
 import { openJira, getStatusClass } from '@/lib/helpers'
 import { MONTH_NAMES } from '@/lib/constants'
 import type { Issue } from '@/types'
 
 export default function Page() {
   const now = new Date()
-  const [tab, setTab] = useState<'KAN' | 'SA' | 'DASHBOARD' | 'PRODUCAO' | 'CONFIG' | 'NOVA'>('KAN')
+  const [tab, setTab] = useState<'KAN' | 'SA' | 'DASHBOARD' | 'PRODUCAO' | 'CONFIG' | 'NOVA' | 'NOVO_SA'>('KAN')
   const [alertFilter, setAlertFilter] = useState('todos')
   const [statusFilter, setStatusFilter] = useState('todos')
   const [taskStatusFilter, setTaskStatusFilter] = useState('todos')
@@ -199,6 +200,7 @@ export default function Page() {
             { key: 'PRODUCAO', label: 'Produção' },
             { key: 'CONFIG', label: '⚙ SLAs' },
             { key: 'NOVA', label: '+ Nova Implantação' },
+            { key: 'NOVO_SA', label: '+ Novo Serviço' },
           ].map(t => (
             <button key={t.key} className={`tab-btn ${tab === t.key ? 'on' : ''}`}
               onClick={() => { setTab(t.key as any); setAlertFilter('todos'); setStatusFilter('todos'); setTaskStatusFilter('todos'); setSearchQuery('') }}>
@@ -382,6 +384,9 @@ export default function Page() {
 
         {/* Nova Implantação */}
         {tab === 'NOVA' && <NovaImplantacaoTab />}
+
+        {/* Novo Serviço Adicional */}
+        {tab === 'NOVO_SA' && <NovoServicoTab />}
       </div>
     </>
   )

@@ -159,7 +159,7 @@ export default function ClientDrawer({ issue, slaConfig, onClose }: {
         {/* Header */}
         <div style={{
           padding: '20px 24px', borderBottom: '1px solid var(--c-border)',
-          position: 'sticky', top: 0, background: 'var(--c-surface)', zIndex: 1,
+          position: 'sticky', top: 0, background: 'var(--c-surface)', zIndex: 10,
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
