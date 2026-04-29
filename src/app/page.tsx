@@ -515,7 +515,7 @@ export default function Page() {
 
           {tab === 'CONFIG' && <SlaConfigTab config={slaConfig} onSave={handleSlaConfigSave} />}
           {tab === 'NOVA' && <NovaImplantacaoTab />}
-          {tab === 'NOVO_SA' && <NovoServicoTab />}
+          {tab === 'NOVO_SA' && <NovoServicoTab clients={clients} />}
         </div>
       </div>
     </>
