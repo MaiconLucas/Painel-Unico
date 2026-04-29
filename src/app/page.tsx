@@ -107,12 +107,33 @@ export default function Page() {
     PRODUCAO: 'Produção', CONFIG: 'SLAs', NOVA: 'Nova Implantação', NOVO_SA: 'Novo Serviço',
   }
 
-  const stats = [
-    { label: 'Críticos', value: summary.atrasados, color: 'var(--c-err)', dot: '#e05c4a' },
-    { label: 'Atenção', value: summary.alertas, color: 'var(--c-warn)', dot: '#d4a012' },
-    { label: 'Aguardando', value: summary.aguardando, color: 'var(--c-blue)', dot: '#5b8ef0' },
-    { label: 'No prazo', value: summary.ok, color: 'var(--c-ok)', dot: '#4caf6a' },
-  ]
+  const kanActive = clients.filter(c => c.alert !== 'done')
+
+  const pageStats = (() => {
+    if (tab === 'KAN') return [
+      { label: 'Total',      value: kanActive.length,                                                         color: '' },
+      { label: 'Críticos',   value: kanActive.filter(c => c.alert === 'critical').length,                    color: 'var(--c-err)' },
+      { label: 'Atenção',    value: kanActive.filter(c => c.alert === 'warning').length,                     color: 'var(--c-warn)' },
+      { label: 'Aguardando', value: kanActive.filter(c => c.alert === 'waiting' || c.alert === 'bloqueado').length, color: 'var(--c-blue)' },
+      { label: 'Sem tasks',  value: kanActive.filter(c => c.alert === 'noTasks').length,                     color: 'var(--c-muted)' },
+      { label: 'No prazo',   value: kanActive.filter(c => c.alert === 'ok').length,                          color: 'var(--c-ok)' },
+    ]
+    if (tab === 'SA') return [
+      { label: 'Total',      value: saIssues.length,                                                          color: '' },
+      { label: 'Críticos',   value: saIssues.filter(c => c.alert === 'critical').length,                     color: 'var(--c-err)' },
+      { label: 'Atenção',    value: saIssues.filter(c => c.alert === 'warning').length,                      color: 'var(--c-warn)' },
+      { label: 'Aguardando', value: saIssues.filter(c => c.alert === 'waiting').length,                      color: 'var(--c-blue)' },
+      { label: 'No prazo',   value: saIssues.filter(c => c.alert === 'ok').length,                           color: 'var(--c-ok)' },
+    ]
+    return [
+      { label: 'Implantações',  value: summary.total,     color: '' },
+      { label: 'Serv. Adic.',   value: summary.totalSA,   color: '' },
+      { label: 'Críticos',      value: summary.atrasados, color: 'var(--c-err)' },
+      { label: 'Atenção',       value: summary.alertas,   color: 'var(--c-warn)' },
+      { label: 'Aguardando',    value: summary.aguardando,color: 'var(--c-blue)' },
+      { label: 'No prazo',      value: summary.ok,        color: 'var(--c-ok)' },
+    ]
+  })()
 
   return (
     <>
@@ -220,22 +241,16 @@ export default function Page() {
           </button>
         </div>
 
-        {/* Stats */}
+        {/* Stats contextuais */}
         <div className="sidebar-section">
-          <p className="sidebar-label">Visão geral</p>
-          <div style={{ display: 'flex', gap: 0, flexWrap: 'wrap', padding: '4px 16px 8px' }}>
-            <div style={{ width: '50%', paddingBottom: 10 }}>
-              <p style={{ fontSize: 10, color: 'var(--c-muted)', marginBottom: 1 }}>Implantações</p>
-              <p style={{ fontSize: 18, fontWeight: 700 }}>{loading ? '—' : summary.total}</p>
-            </div>
-            <div style={{ width: '50%', paddingBottom: 10 }}>
-              <p style={{ fontSize: 10, color: 'var(--c-muted)', marginBottom: 1 }}>Serv. Adicionais</p>
-              <p style={{ fontSize: 18, fontWeight: 700 }}>{loading ? '—' : summary.totalSA}</p>
-            </div>
-            {stats.map(s => (
+          <p className="sidebar-label">
+            {tab === 'KAN' ? 'Implantações' : tab === 'SA' ? 'Serv. Adicionais' : 'Visão geral'}
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', padding: '4px 16px 8px' }}>
+            {pageStats.map(s => (
               <div key={s.label} style={{ width: '50%', paddingBottom: 8 }}>
                 <p style={{ fontSize: 10, color: 'var(--c-muted)', marginBottom: 1 }}>{s.label}</p>
-                <p style={{ fontSize: 18, fontWeight: 700, color: s.color }}>{loading ? '—' : s.value}</p>
+                <p style={{ fontSize: 18, fontWeight: 700, color: s.color || 'var(--c-text)' }}>{loading ? '—' : s.value}</p>
               </div>
             ))}
           </div>
@@ -259,19 +274,6 @@ export default function Page() {
           ))}
         </div>
 
-        {/* Create */}
-        <div className="sidebar-section">
-          <p className="sidebar-label">Criar</p>
-          {([
-            { key: 'NOVA', label: 'Nova Implantação' },
-            { key: 'NOVO_SA', label: 'Novo Serviço' },
-          ] as { key: Tab; label: string }[]).map(item => (
-            <button key={item.key} className={`nav-item create ${tab === item.key ? 'active' : ''}`} onClick={() => changeTab(item.key)}>
-              <span style={{ fontSize: 14, fontWeight: 700 }}>+</span>
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </div>
 
         {/* Footer */}
         <div style={{ padding: '12px 8px' }}>
@@ -291,7 +293,7 @@ export default function Page() {
               <h1 style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em' }}>{tabTitles[tab]}</h1>
               {tab === 'KAN' && !loading && (
                 <p style={{ fontSize: 12, color: 'var(--c-muted)', marginTop: 2 }}>
-                  {filteredKAN.length} de {clients.filter(c => c.alert !== 'done').length} clientes
+                  {filteredKAN.length} de {kanActive.length} clientes
                 </p>
               )}
               {tab === 'SA' && !loading && (
@@ -300,7 +302,38 @@ export default function Page() {
                 </p>
               )}
             </div>
-            {error && <span style={{ fontSize: 12, color: 'var(--c-err)', background: 'var(--c-err-bg)', padding: '4px 10px', borderRadius: 6 }}>Erro: {error}</span>}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {error && <span style={{ fontSize: 12, color: 'var(--c-err)', background: 'var(--c-err-bg)', padding: '4px 10px', borderRadius: 6 }}>Erro: {error}</span>}
+
+              {tab === 'KAN' && (
+                <button
+                  onClick={() => changeTab('NOVA')}
+                  style={{
+                    fontSize: 13, padding: '7px 16px', borderRadius: 8,
+                    background: 'var(--c-text)', color: 'var(--c-bg)',
+                    border: 'none', cursor: 'pointer', fontWeight: 600,
+                    display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
+                  }}
+                >
+                  + Nova Implantação
+                </button>
+              )}
+
+              {tab === 'SA' && (
+                <button
+                  onClick={() => changeTab('NOVO_SA')}
+                  style={{
+                    fontSize: 13, padding: '7px 16px', borderRadius: 8,
+                    background: 'var(--c-text)', color: 'var(--c-bg)',
+                    border: 'none', cursor: 'pointer', fontWeight: 600,
+                    display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
+                  }}
+                >
+                  + Novo Serviço
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Filtros KAN */}
