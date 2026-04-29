@@ -82,6 +82,9 @@ export function calcStageAlert(tasks: any[], epicCreatedAt: string, slaConfig: a
   })
 
   if (!currentTask) {
+    if (tasks.length === 0) {
+      return { stage: null, stageStatus: 'noTasks', daysInStage: 0, alert: 'noTasks', alertReason: 'Nenhuma task criada ainda', currentTaskKey: undefined }
+    }
     return { stage: null, stageStatus: 'done', daysInStage: 0, alert: 'done', alertReason: 'Todas as etapas concluídas', currentTaskKey: undefined }
   }
 
@@ -102,10 +105,7 @@ export function calcStageAlert(tasks: any[], epicCreatedAt: string, slaConfig: a
   let alert: string
   let alertReason: string
 
-  if (tasks.length === 0) {
-    alert = 'noTasks'
-    alertReason = 'Nenhuma task criada ainda'
-  } else if (isWaitingClient) {
+  if (isWaitingClient) {
     alert = 'bloqueado'
     alertReason = `Aguardando cliente há ${daysInStage} dia(s) útil(eis)`
   } else if (!serviceConfig?.slaDays) {
