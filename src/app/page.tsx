@@ -19,7 +19,6 @@ export default function Page() {
   const now = new Date()
   const [tab, setTab] = useState<Tab>('KAN')
   const [alertFilter, setAlertFilter] = useState('todos')
-  const [statusFilter, setStatusFilter] = useState('todos')
   const [taskStatusFilter, setTaskStatusFilter] = useState('todos')
   const [searchQuery, setSearchQuery] = useState('')
   const [periodYear, setPeriodYear] = useState(now.getFullYear())
@@ -40,7 +39,7 @@ export default function Page() {
   }, [])
 
   function changeTab(t: Tab) {
-    setTab(t); setAlertFilter('todos'); setStatusFilter('todos'); setTaskStatusFilter('todos'); setSearchQuery('')
+    setTab(t); setAlertFilter('todos'); setTaskStatusFilter('todos'); setSearchQuery('')
   }
 
   const handlePeriod = (year: number, month: number) => {
@@ -48,7 +47,6 @@ export default function Page() {
   }
 
   const implantadores = Array.from(new Set(clients.map(c => c.assignee || 'Sem responsável')))
-  const availableStatuses = Array.from(new Set(clients.map(c => c.status).filter(Boolean)))
 
   function clientMatchesTaskStatusFilter(c: Issue): boolean {
     if (taskStatusFilter === 'todos') return true
@@ -69,10 +67,9 @@ export default function Page() {
       if (!['todos', 'critico', 'atencao', 'aguardando', 'semtasks'].includes(alertFilter)) return c.assignee === alertFilter
       return true
     })()
-    const statusMatch = statusFilter === 'todos' || c.status === statusFilter
     const taskMatch = clientMatchesTaskStatusFilter(c)
     const searchMatch = !searchQuery.trim() || c.name.toLowerCase().includes(searchQuery.toLowerCase())
-    return alertMatch && statusMatch && taskMatch && searchMatch
+    return alertMatch && taskMatch && searchMatch
   })
 
   const filteredSA = saIssues.filter(c => {
@@ -293,7 +290,7 @@ export default function Page() {
               <h1 style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em' }}>{tabTitles[tab]}</h1>
               {tab === 'KAN' && !loading && (
                 <p style={{ fontSize: 12, color: 'var(--c-muted)', marginTop: 2 }}>
-                  {filteredKAN.length} de {kanActive.length} clientes
+                  {filteredKAN.length} visíveis · {kanActive.length} ativos · {clients.length} no Jira
                 </p>
               )}
               {tab === 'SA' && !loading && (
@@ -362,11 +359,6 @@ export default function Page() {
                 ))}
               </div>
               <div className="filter-group">
-                <span className="section-label" style={{ marginRight: 4 }}>Epic:</span>
-                {['todos', ...availableStatuses].map(s => (
-                  <button key={s} className={`filter-btn ${statusFilter === s ? 'on' : ''}`} onClick={() => setStatusFilter(s)}>{s === 'todos' ? 'Todos' : s}</button>
-                ))}
-                <div className="filter-divider" />
                 <span className="section-label" style={{ marginRight: 4 }}>Tasks:</span>
                 {[
                   { key: 'todos', label: 'Todas' },
