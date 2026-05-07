@@ -27,6 +27,8 @@ export default function NovoServicoTab({ clients }: { clients: Issue[] }) {
     Object.fromEntries(FREE_TASKS.map(t => [t, false]))
   )
   const [iaType, setIaType] = useState('')
+  const [pabxNumbers, setPabxNumbers] = useState('')
+  const [pabxServiceType, setPabxServiceType] = useState('')
   const [loading, setLoading] = useState(false)
   const [created, setCreated] = useState<CreatedIssue[]>([])
   const [error, setError] = useState('')
@@ -35,7 +37,10 @@ export default function NovoServicoTab({ clients }: { clients: Issue[] }) {
   const selectedServices = FREE_TASKS.filter(t => services[t])
   const hasServices = selectedServices.length > 0
   const iaSelected = services['IA']
-  const isDisabled = !selectedAssignee || !hasServices || loading || (iaSelected && !iaType.trim())
+  const pabxSelected = services['PABX']
+  const isDisabled = !selectedAssignee || !hasServices || loading ||
+    (iaSelected && !iaType.trim()) ||
+    (pabxSelected && (!pabxNumbers.trim() || !pabxServiceType.trim()))
 
   const suggestions = useMemo(() => {
     if (!search.trim() || search.length < 2) return []
@@ -61,6 +66,8 @@ export default function NovoServicoTab({ clients }: { clients: Issue[] }) {
 
   function serviceLabel(svc: string) {
     if (svc === 'IA' && iaType.trim()) return `IA (${iaType.trim()})`
+    if (svc === 'PABX' && pabxServiceType.trim() && pabxNumbers.trim())
+      return `PABX (${pabxServiceType.trim()} - ${pabxNumbers.trim()} números)`
     return svc
   }
 
@@ -106,6 +113,8 @@ export default function NovoServicoTab({ clients }: { clients: Issue[] }) {
       setServices(Object.fromEntries(FREE_TASKS.map(t => [t, false])))
       setDescription('')
       setIaType('')
+      setPabxNumbers('')
+      setPabxServiceType('')
     }
     setLoading(false)
   }
@@ -256,6 +265,31 @@ export default function NovoServicoTab({ clients }: { clients: Issue[] }) {
                       border: '1px solid var(--c-blue)', background: 'var(--c-blue-bg)', marginTop: 6,
                     }}
                   />
+                )}
+                {task === 'PABX' && services['PABX'] && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+                    <input
+                      type="number"
+                      min={1}
+                      value={pabxNumbers}
+                      onChange={e => setPabxNumbers(e.target.value)}
+                      placeholder="Quantidade de números"
+                      style={{
+                        ...inputStyle, fontSize: 13, padding: '8px 12px',
+                        border: '1px solid var(--c-blue)', background: 'var(--c-blue-bg)',
+                      }}
+                    />
+                    <input
+                      type="text"
+                      value={pabxServiceType}
+                      onChange={e => setPabxServiceType(e.target.value)}
+                      placeholder="Tipo de PABX (ex: Virtual, Físico, Nuvem...)"
+                      style={{
+                        ...inputStyle, fontSize: 13, padding: '8px 12px',
+                        border: '1px solid var(--c-blue)', background: 'var(--c-blue-bg)',
+                      }}
+                    />
+                  </div>
                 )}
               </div>
             ))}

@@ -14,16 +14,24 @@ export default function NovaImplantacaoTab() {
     Object.fromEntries(FREE_TASKS.map(t => [t, false]))
   )
   const [iaType, setIaType] = useState('')
+  const [pabxNumbers, setPabxNumbers] = useState('')
+  const [pabxServiceType, setPabxServiceType] = useState('')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState<{ epicKey: string; epicUrl: string } | null>(null)
   const [error, setError] = useState('')
 
   const selectedAssignee = assigneeIndex !== '' ? IMPLANTADORES[parseInt(assigneeIndex)] : null
-  const isDisabled = !title.trim() || !selectedAssignee || loading || (freeTasksState['IA'] && !iaType.trim())
+  const isDisabled = !title.trim() || !selectedAssignee || loading ||
+    (freeTasksState['IA'] && !iaType.trim()) ||
+    (freeTasksState['PABX'] && (!pabxNumbers.trim() || !pabxServiceType.trim()))
 
   const selectedTasks = [
     ...TASK_ORDER.filter(t => sequentialTasks[t]),
-    ...FREE_TASKS.filter(t => freeTasksState[t]).map(t => t === 'IA' ? `IA (${iaType.trim()})` : t),
+    ...FREE_TASKS.filter(t => freeTasksState[t]).map(t => {
+      if (t === 'IA') return `IA (${iaType.trim()})`
+      if (t === 'PABX') return `PABX (${pabxServiceType.trim()} - ${pabxNumbers.trim()} números)`
+      return t
+    }),
   ]
 
   async function handleSubmit(e: React.FormEvent) {
@@ -54,6 +62,8 @@ export default function NovaImplantacaoTab() {
       setSequentialTasks(Object.fromEntries(TASK_ORDER.map(t => [t, false])))
       setFreeTasksState(Object.fromEntries(FREE_TASKS.map(t => [t, false])))
       setIaType('')
+      setPabxNumbers('')
+      setPabxServiceType('')
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -202,6 +212,35 @@ export default function NovaImplantacaoTab() {
                       color: 'var(--c-text)', outline: 'none', fontFamily: 'inherit', marginTop: 6,
                     }}
                   />
+                )}
+                {task === 'PABX' && freeTasksState['PABX'] && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+                    <input
+                      type="number"
+                      min={1}
+                      value={pabxNumbers}
+                      onChange={e => setPabxNumbers(e.target.value)}
+                      placeholder="Quantidade de números"
+                      required
+                      style={{
+                        width: '100%', fontSize: 13, padding: '8px 12px', borderRadius: 8,
+                        border: '1px solid var(--c-blue)', background: 'var(--c-blue-bg)',
+                        color: 'var(--c-text)', outline: 'none', fontFamily: 'inherit',
+                      }}
+                    />
+                    <input
+                      type="text"
+                      value={pabxServiceType}
+                      onChange={e => setPabxServiceType(e.target.value)}
+                      placeholder="Tipo de PABX (ex: Virtual, Físico, Nuvem...)"
+                      required
+                      style={{
+                        width: '100%', fontSize: 13, padding: '8px 12px', borderRadius: 8,
+                        border: '1px solid var(--c-blue)', background: 'var(--c-blue-bg)',
+                        color: 'var(--c-text)', outline: 'none', fontFamily: 'inherit',
+                      }}
+                    />
+                  </div>
                 )}
               </div>
             ))}
