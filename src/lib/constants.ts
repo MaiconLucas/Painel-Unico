@@ -1,6 +1,6 @@
 export const JIRA_URL = 'https://suporteunico.atlassian.net/browse'
 export const TASK_ORDER = ['Site', 'Portfólio', 'Implantação', 'Consultoria', 'URA', 'Importação de contatos', 'Migração']
-export const FREE_TASKS = ['CRM', 'Integração', 'IA', 'NPS do gestor', 'Monitoramento']
+export const FREE_TASKS = ['CRM', 'Integração', 'IA', 'PABX', 'NPS do gestor', 'Monitoramento']
 export const ALL_TASK_TYPES = [...TASK_ORDER, ...FREE_TASKS]
 export const MONTH_NAMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 export const SLA_CONFIG_ISSUE = 'SA-34'
