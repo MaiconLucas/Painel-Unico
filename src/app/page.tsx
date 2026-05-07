@@ -47,6 +47,7 @@ export default function Page() {
   }
 
   const implantadores = Array.from(new Set(clients.map(c => c.assignee || 'Sem responsável')))
+  const saImplantadores = Array.from(new Set(saIssues.map(c => c.assignee || 'Sem responsável')))
 
   function clientMatchesTaskStatusFilter(c: Issue): boolean {
     if (taskStatusFilter === 'todos') return true
@@ -72,10 +73,15 @@ export default function Page() {
   })
 
   const filteredSA = saIssues.filter(c => {
-    if (alertFilter === 'critico') return c.alert === 'critical'
-    if (alertFilter === 'atencao') return c.alert === 'warning'
-    if (alertFilter === 'aguardando') return c.alert === 'waiting' || c.alert === 'bloqueado'
-    return true
+    const alertMatch = (() => {
+      if (alertFilter === 'critico') return c.alert === 'critical'
+      if (alertFilter === 'atencao') return c.alert === 'warning'
+      if (alertFilter === 'aguardando') return c.alert === 'waiting' || c.alert === 'bloqueado'
+      if (!['todos', 'critico', 'atencao', 'aguardando'].includes(alertFilter)) return c.assignee === alertFilter
+      return true
+    })()
+    const searchMatch = !searchQuery.trim() || c.name.toLowerCase().includes(searchQuery.toLowerCase())
+    return alertMatch && searchMatch
   })
 
   const byImpl: Record<string, Issue[]> = {}
@@ -374,6 +380,13 @@ export default function Page() {
 
           {tab === 'SA' && (
             <div className="filters-bar">
+              <input
+                className="search-input"
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Pesquisar serviço..."
+              />
               <div className="filter-group">
                 {[
                   { key: 'todos', label: 'Todos' },
@@ -382,6 +395,10 @@ export default function Page() {
                   { key: 'aguardando', label: '⏸ Aguardando' },
                 ].map(f => (
                   <button key={f.key} className={`filter-btn ${alertFilter === f.key ? 'on' : ''}`} onClick={() => setAlertFilter(f.key)}>{f.label}</button>
+                ))}
+                {saImplantadores.length > 0 && <div className="filter-divider" />}
+                {saImplantadores.map(impl => (
+                  <button key={impl} className={`filter-btn ${alertFilter === impl ? 'on' : ''}`} onClick={() => setAlertFilter(impl)}>{impl.split(' ')[0]}</button>
                 ))}
               </div>
             </div>
