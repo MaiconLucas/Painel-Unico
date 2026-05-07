@@ -27,7 +27,7 @@ export async function GET(request: Request) {
     const slaConfig = await loadSlaConfig()
 
     const epicJql = encodeURIComponent(
-      `project=${PROJECT_KAN} AND issuetype in ("Épico","Epic","épico") AND status!="Concluído"`
+      `project=${PROJECT_KAN} AND issuetype in ("Épico","Epic","épico") AND updated >= -365d ORDER BY updated DESC`
     )
     const epics: any[] = []
     let startAt = 0
