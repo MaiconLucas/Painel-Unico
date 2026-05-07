@@ -29,10 +29,17 @@ export async function GET(request: Request) {
     const epicJql = encodeURIComponent(
       `project=${PROJECT_KAN} AND issuetype in ("Épico","Epic","épico") AND status!="Concluído"`
     )
-    const epicsData = await jiraFetch(
-      `/search/jql?jql=${epicJql}&maxResults=100&fields=summary,status,assignee,duedate,description,created`
-    )
-    const epics = epicsData.issues || []
+    const epics: any[] = []
+    let startAt = 0
+    while (true) {
+      const epicsData = await jiraFetch(
+        `/search/jql?jql=${epicJql}&maxResults=100&startAt=${startAt}&fields=summary,status,assignee,duedate,description,created`
+      )
+      const batch = epicsData.issues || []
+      epics.push(...batch)
+      if (epics.length >= (epicsData.total || 0) || batch.length === 0) break
+      startAt += batch.length
+    }
 
     const clients = await Promise.all(epics.map(async (epic: any) => {
       let tasks: any[] = []
