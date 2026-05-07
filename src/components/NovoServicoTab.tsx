@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { FREE_TASKS, IMPLANTADORES } from '@/lib/constants'
+import { FREE_TASKS } from '@/lib/constants'
+import { useJiraMembers } from '@/hooks/useJiraMembers'
 import type { Issue } from '@/types'
 
 type CreatedIssue = { key: string; url: string; service: string }
@@ -18,6 +19,7 @@ const inputStyle: React.CSSProperties = {
 }
 
 export default function NovoServicoTab({ clients }: { clients: Issue[] }) {
+  const { members, loading: loadingMembers } = useJiraMembers()
   const [search, setSearch] = useState('')
   const [selectedClient, setSelectedClient] = useState<Issue | null>(null)
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -33,7 +35,7 @@ export default function NovoServicoTab({ clients }: { clients: Issue[] }) {
   const [created, setCreated] = useState<CreatedIssue[]>([])
   const [error, setError] = useState('')
 
-  const selectedAssignee = assigneeIndex !== '' ? IMPLANTADORES[parseInt(assigneeIndex)] : null
+  const selectedAssignee = assigneeIndex !== '' ? members[parseInt(assigneeIndex)] : null
   const selectedServices = FREE_TASKS.filter(t => services[t])
   const hasServices = selectedServices.length > 0
   const iaSelected = services['IA']
@@ -53,7 +55,7 @@ export default function NovoServicoTab({ clients }: { clients: Issue[] }) {
     setSearch(c.name)
     setShowSuggestions(false)
     if (c.assignee) {
-      const idx = IMPLANTADORES.findIndex(i => i.name === c.assignee)
+      const idx = members.findIndex(m => m.name === c.assignee)
       if (idx >= 0) setAssigneeIndex(String(idx))
     }
   }
@@ -212,11 +214,12 @@ export default function NovoServicoTab({ clients }: { clients: Issue[] }) {
             value={assigneeIndex}
             onChange={e => setAssigneeIndex(e.target.value)}
             required
+            disabled={loadingMembers}
             style={{ ...inputStyle, cursor: 'pointer' }}
           >
-            <option value="" disabled>Selecione o responsável</option>
-            {IMPLANTADORES.map((impl, i) => (
-              <option key={impl.name} value={String(i)}>{impl.name}</option>
+            <option value="" disabled>{loadingMembers ? 'Carregando...' : 'Selecione o responsável'}</option>
+            {members.map((m, i) => (
+              <option key={m.accountId} value={String(i)}>{m.name}</option>
             ))}
           </select>
         </div>

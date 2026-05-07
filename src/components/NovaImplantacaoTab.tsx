@@ -1,9 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { TASK_ORDER, FREE_TASKS, IMPLANTADORES } from '@/lib/constants'
+import { TASK_ORDER, FREE_TASKS } from '@/lib/constants'
+import { useJiraMembers } from '@/hooks/useJiraMembers'
 
 export default function NovaImplantacaoTab() {
+  const { members, loading: loadingMembers } = useJiraMembers()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [assigneeIndex, setAssigneeIndex] = useState('')
@@ -20,7 +22,7 @@ export default function NovaImplantacaoTab() {
   const [success, setSuccess] = useState<{ epicKey: string; epicUrl: string } | null>(null)
   const [error, setError] = useState('')
 
-  const selectedAssignee = assigneeIndex !== '' ? IMPLANTADORES[parseInt(assigneeIndex)] : null
+  const selectedAssignee = assigneeIndex !== '' ? members[parseInt(assigneeIndex)] : null
   const isDisabled = !title.trim() || !selectedAssignee || loading ||
     (freeTasksState['IA'] && !iaType.trim()) ||
     (freeTasksState['PABX'] && (!pabxNumbers.trim() || !pabxServiceType.trim()))
@@ -58,6 +60,7 @@ export default function NovaImplantacaoTab() {
       setSuccess({ epicKey: data.epicKey, epicUrl: data.epicUrl })
       setTitle('')
       setDescription('')
+      setAssigneeIndex('')
       setAssigneeIndex('')
       setSequentialTasks(Object.fromEntries(TASK_ORDER.map(t => [t, false])))
       setFreeTasksState(Object.fromEntries(FREE_TASKS.map(t => [t, false])))
@@ -135,15 +138,16 @@ export default function NovaImplantacaoTab() {
             value={assigneeIndex}
             onChange={e => setAssigneeIndex(e.target.value)}
             required
+            disabled={loadingMembers}
             style={{
               width: '100%', fontSize: 14, padding: '10px 14px', borderRadius: 8,
               border: '1px solid var(--c-border)', background: 'var(--c-surface)',
               color: 'var(--c-text)', outline: 'none', cursor: 'pointer',
             }}
           >
-            <option value="" disabled>Selecione o implantador</option>
-            {IMPLANTADORES.map((impl, i) => (
-              <option key={impl.name} value={String(i)}>{impl.name}</option>
+            <option value="" disabled>{loadingMembers ? 'Carregando...' : 'Selecione o implantador'}</option>
+            {members.map((m, i) => (
+              <option key={m.accountId} value={String(i)}>{m.name}</option>
             ))}
           </select>
         </div>
