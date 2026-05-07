@@ -58,7 +58,6 @@ export default function Page() {
   }
 
   const filteredKAN = clients.filter(c => {
-    if (c.alert === 'done') return false
     const alertMatch = (() => {
       if (alertFilter === 'critico') return c.alert === 'critical'
       if (alertFilter === 'atencao') return c.alert === 'warning'
@@ -104,7 +103,7 @@ export default function Page() {
     PRODUCAO: 'Produção', CONFIG: 'SLAs', NOVA: 'Nova Implantação', NOVO_SA: 'Novo Serviço',
   }
 
-  const kanActive = clients.filter(c => c.alert !== 'done')
+  const kanActive = clients
 
   const pageStats = (() => {
     if (tab === 'KAN') return [
