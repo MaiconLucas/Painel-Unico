@@ -68,6 +68,14 @@ export async function GET(request: Request) {
       const pendingTasks = tasks.filter((t: any) => !t.status?.toLowerCase().includes('conclu'))
       const stageAlert = calcStageAlert(tasks, epic.fields.created, slaConfig)
 
+      // 'done' só deve ocultar o epic se o próprio epic também está "Concluído" no Jira.
+      // Se as tasks estão todas concluídas mas o epic segue aberto, mostra como 'noTasks'.
+      const epicConcluido = status.toLowerCase().includes('conclu')
+      const alert = stageAlert.alert === 'done' && !epicConcluido ? 'noTasks' : stageAlert.alert
+      const alertReason = alert === 'noTasks' && stageAlert.alert === 'done'
+        ? 'Todas as tasks concluídas, mas epic ainda em aberto'
+        : stageAlert.alertReason
+
       // Strip changelog before sending to client
       const stripChangelog = (t: any) => {
         const { changelog: _cl, ...rest } = t
@@ -94,8 +102,8 @@ export async function GET(request: Request) {
         stage: stageAlert.stage,
         stageStatus: stageAlert.stageStatus,
         daysInStage: stageAlert.daysInStage,
-        alert: stageAlert.alert,
-        alertReason: stageAlert.alertReason,
+        alert,
+        alertReason,
         currentTaskKey: stageAlert.currentTaskKey,
       }
     }))
