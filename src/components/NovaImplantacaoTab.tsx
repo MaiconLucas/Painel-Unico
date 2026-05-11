@@ -15,6 +15,7 @@ export default function NovaImplantacaoTab() {
   const [freeTasksState, setFreeTasksState] = useState<Record<string, boolean>>(
     Object.fromEntries(FREE_TASKS.map(t => [t, false]))
   )
+  const [migrationCount, setMigrationCount] = useState('')
   const [iaType, setIaType] = useState('')
   const [pabxNumbers, setPabxNumbers] = useState('')
   const [pabxServiceType, setPabxServiceType] = useState('')
@@ -23,12 +24,20 @@ export default function NovaImplantacaoTab() {
   const [error, setError] = useState('')
 
   const selectedAssignee = assigneeIndex !== '' ? members[parseInt(assigneeIndex)] : null
+  const migrationSelected = sequentialTasks['Migração']
   const isDisabled = !title.trim() || !selectedAssignee || loading ||
+    (migrationSelected && (!migrationCount || parseInt(migrationCount) < 1)) ||
     (freeTasksState['IA'] && !iaType.trim()) ||
     (freeTasksState['PABX'] && (!pabxNumbers.trim() || !pabxServiceType.trim()))
 
   const selectedTasks = [
-    ...TASK_ORDER.filter(t => sequentialTasks[t]),
+    ...TASK_ORDER.filter(t => sequentialTasks[t]).flatMap(t => {
+      if (t === 'Migração' && migrationCount) {
+        const n = parseInt(migrationCount)
+        return Array.from({ length: n }, (_, i) => `Migração ${i + 1}`)
+      }
+      return [t]
+    }),
     ...FREE_TASKS.filter(t => freeTasksState[t]).map(t => {
       if (t === 'IA') return `IA (${iaType.trim()})`
       if (t === 'PABX') return `PABX (${pabxServiceType.trim()} - ${pabxNumbers.trim()} números)`
@@ -64,6 +73,7 @@ export default function NovaImplantacaoTab() {
       setAssigneeIndex('')
       setSequentialTasks(Object.fromEntries(TASK_ORDER.map(t => [t, false])))
       setFreeTasksState(Object.fromEntries(FREE_TASKS.map(t => [t, false])))
+      setMigrationCount('')
       setIaType('')
       setPabxNumbers('')
       setPabxServiceType('')
@@ -158,23 +168,49 @@ export default function NovaImplantacaoTab() {
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {TASK_ORDER.map(task => (
-              <label key={task} style={{
-                display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 14,
-                padding: '8px 12px', borderRadius: 8,
-                background: sequentialTasks[task] ? 'var(--c-blue-bg)' : 'var(--c-surface)',
-                border: `1px solid ${sequentialTasks[task] ? 'var(--c-blue)' : 'var(--c-border)'}`,
-                transition: 'all 0.1s',
-              }}>
-                <input
-                  type="checkbox"
-                  checked={sequentialTasks[task] || false}
-                  onChange={e => setSequentialTasks(prev => ({ ...prev, [task]: e.target.checked }))}
-                  style={{ width: 16, height: 16, accentColor: 'var(--c-blue)', cursor: 'pointer' }}
-                />
-                <span style={{ fontWeight: sequentialTasks[task] ? 600 : 400, color: sequentialTasks[task] ? 'var(--c-blue)' : 'var(--c-text)' }}>
-                  {task}
-                </span>
-              </label>
+              <div key={task}>
+                <label style={{
+                  display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 14,
+                  padding: '8px 12px', borderRadius: 8,
+                  background: sequentialTasks[task] ? 'var(--c-blue-bg)' : 'var(--c-surface)',
+                  border: `1px solid ${sequentialTasks[task] ? 'var(--c-blue)' : 'var(--c-border)'}`,
+                  transition: 'all 0.1s',
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={sequentialTasks[task] || false}
+                    onChange={e => {
+                      setSequentialTasks(prev => ({ ...prev, [task]: e.target.checked }))
+                      if (task === 'Migração' && !e.target.checked) setMigrationCount('')
+                    }}
+                    style={{ width: 16, height: 16, accentColor: 'var(--c-blue)', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontWeight: sequentialTasks[task] ? 600 : 400, color: sequentialTasks[task] ? 'var(--c-blue)' : 'var(--c-text)', flex: 1 }}>
+                    {task}
+                  </span>
+                  {task === 'Migração' && sequentialTasks['Migração'] && migrationCount && (
+                    <span style={{ fontSize: 11, color: 'var(--c-blue)', opacity: 0.8 }}>
+                      {parseInt(migrationCount)} task(s)
+                    </span>
+                  )}
+                </label>
+                {task === 'Migração' && sequentialTasks['Migração'] && (
+                  <input
+                    type="number"
+                    min={1}
+                    max={99}
+                    value={migrationCount}
+                    onChange={e => setMigrationCount(e.target.value)}
+                    placeholder="Quantos números serão migrados?"
+                    style={{
+                      width: '100%', fontSize: 13, padding: '8px 12px', borderRadius: 8,
+                      border: '1px solid var(--c-blue)', background: 'var(--c-blue-bg)',
+                      color: 'var(--c-text)', outline: 'none', fontFamily: 'inherit', marginTop: 6,
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                )}
+              </div>
             ))}
           </div>
         </div>
