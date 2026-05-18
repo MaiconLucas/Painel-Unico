@@ -221,34 +221,32 @@ export default function LigacoesTab() {
             )}
           </div>
 
-          {/* Seleção de membros */}
-          {rows.length > 0 && (
-            <div>
-              <label style={labelStyle}>Atendentes que receberão ligações <span style={{ color: 'var(--c-err)' }}>*</span></label>
-              {loadingMembers
-                ? <p style={{ fontSize: 13, color: 'var(--c-muted)' }}>Carregando equipe do Jira...</p>
-                : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {members.map((m, i) => (
-                      <label key={m.accountId} style={{
-                        display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 14,
-                        padding: '8px 12px', borderRadius: 8,
-                        background: selectedIdxs.has(i) ? 'var(--c-blue-bg)' : 'var(--c-surface)',
-                        border: `1px solid ${selectedIdxs.has(i) ? 'var(--c-blue)' : 'var(--c-border)'}`,
-                        transition: 'all 0.1s',
-                      }}>
-                        <input type="checkbox" checked={selectedIdxs.has(i)} onChange={() => toggleMember(i)}
-                          style={{ width: 16, height: 16, accentColor: 'var(--c-blue)', cursor: 'pointer' }} />
-                        <span style={{ fontWeight: selectedIdxs.has(i) ? 600 : 400, color: selectedIdxs.has(i) ? 'var(--c-blue)' : 'var(--c-text)' }}>
-                          {m.name}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                )
-              }
-            </div>
-          )}
+          {/* Seleção de membros — sempre visível */}
+          <div>
+            <label style={labelStyle}>Atendentes que receberão ligações <span style={{ color: 'var(--c-err)' }}>*</span></label>
+            {loadingMembers
+              ? <p style={{ fontSize: 13, color: 'var(--c-muted)' }}>Carregando equipe do Jira...</p>
+              : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {members.map((m, i) => (
+                    <label key={m.accountId} style={{
+                      display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 14,
+                      padding: '8px 12px', borderRadius: 8,
+                      background: selectedIdxs.has(i) ? 'var(--c-blue-bg)' : 'var(--c-surface)',
+                      border: `1px solid ${selectedIdxs.has(i) ? 'var(--c-blue)' : 'var(--c-border)'}`,
+                      transition: 'all 0.1s',
+                    }}>
+                      <input type="checkbox" checked={selectedIdxs.has(i)} onChange={() => toggleMember(i)}
+                        style={{ width: 16, height: 16, accentColor: 'var(--c-blue)', cursor: 'pointer' }} />
+                      <span style={{ fontWeight: selectedIdxs.has(i) ? 600 : 400, color: selectedIdxs.has(i) ? 'var(--c-blue)' : 'var(--c-text)' }}>
+                        {m.name}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )
+            }
+          </div>
 
           {/* Botão preview */}
           {rows.length > 0 && selectedIdxs.size > 0 && (
