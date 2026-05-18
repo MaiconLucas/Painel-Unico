@@ -9,11 +9,12 @@ import DashboardTab from '@/components/DashboardTab'
 import SlaConfigTab from '@/components/SlaConfigTab'
 import NovaImplantacaoTab from '@/components/NovaImplantacaoTab'
 import NovoServicoTab from '@/components/NovoServicoTab'
+import LigacoesTab from '@/components/LigacoesTab'
 import { openJira, getStatusClass } from '@/lib/helpers'
 import { MONTH_NAMES } from '@/lib/constants'
 import type { Issue } from '@/types'
 
-type Tab = 'KAN' | 'SA' | 'DASHBOARD' | 'PRODUCAO' | 'CONFIG' | 'NOVA' | 'NOVO_SA'
+type Tab = 'KAN' | 'SA' | 'DASHBOARD' | 'PRODUCAO' | 'CONFIG' | 'NOVA' | 'NOVO_SA' | 'LIGACOES'
 
 export default function Page() {
   const now = new Date()
@@ -106,7 +107,7 @@ export default function Page() {
 
   const tabTitles: Record<Tab, string> = {
     KAN: 'Implantações', SA: 'Serv. Adicionais', DASHBOARD: 'Dashboard',
-    PRODUCAO: 'Produção', CONFIG: 'SLAs', NOVA: 'Nova Implantação', NOVO_SA: 'Novo Serviço',
+    PRODUCAO: 'Produção', CONFIG: 'SLAs', NOVA: 'Nova Implantação', NOVO_SA: 'Novo Serviço', LIGACOES: 'Ligações',
   }
 
   const kanActive = clients
@@ -264,6 +265,7 @@ export default function Page() {
           {([
             { key: 'KAN', label: 'Implantações', icon: '📋', count: summary.total },
             { key: 'SA', label: 'Serv. Adicionais', icon: '🔧', count: summary.totalSA },
+            { key: 'LIGACOES', label: 'Ligações', icon: '📞', count: null },
             { key: 'DASHBOARD', label: 'Dashboard', icon: '📊', count: null },
             { key: 'PRODUCAO', label: 'Produção', icon: '🏭', count: null },
             { key: 'CONFIG', label: 'SLAs', icon: '⚙', count: null },
@@ -524,6 +526,7 @@ export default function Page() {
           {tab === 'CONFIG' && <SlaConfigTab config={slaConfig} onSave={handleSlaConfigSave} />}
           {tab === 'NOVA' && <NovaImplantacaoTab />}
           {tab === 'NOVO_SA' && <NovoServicoTab clients={clients} />}
+          {tab === 'LIGACOES' && <LigacoesTab />}
         </div>
       </div>
     </>
