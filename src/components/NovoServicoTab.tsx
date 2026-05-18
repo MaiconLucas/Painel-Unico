@@ -28,6 +28,7 @@ export default function NovoServicoTab({ clients }: { clients: Issue[] }) {
   const [services, setServices] = useState<Record<string, boolean>>(
     Object.fromEntries(FREE_TASKS.map(t => [t, false]))
   )
+  const [clienteIdentificacao, setClienteIdentificacao] = useState('')
   const [iaType, setIaType] = useState('')
   const [pabxNumbers, setPabxNumbers] = useState('')
   const [pabxServiceType, setPabxServiceType] = useState('')
@@ -40,7 +41,7 @@ export default function NovoServicoTab({ clients }: { clients: Issue[] }) {
   const hasServices = selectedServices.length > 0
   const iaSelected = services['IA']
   const pabxSelected = services['PABX']
-  const isDisabled = !selectedAssignee || !hasServices || loading ||
+  const isDisabled = !selectedAssignee || !hasServices || !clienteIdentificacao.trim() || loading ||
     (iaSelected && !iaType.trim()) ||
     (pabxSelected && (!pabxNumbers.trim() || !pabxServiceType.trim()))
 
@@ -53,6 +54,7 @@ export default function NovoServicoTab({ clients }: { clients: Issue[] }) {
   function selectClient(c: Issue) {
     setSelectedClient(c)
     setSearch(c.name)
+    setClienteIdentificacao(c.name)
     setShowSuggestions(false)
     if (c.assignee) {
       const idx = members.findIndex(m => m.name === c.assignee)
@@ -63,6 +65,7 @@ export default function NovoServicoTab({ clients }: { clients: Issue[] }) {
   function clearClient() {
     setSelectedClient(null)
     setSearch('')
+    setClienteIdentificacao('')
     setAssigneeIndex('')
   }
 
@@ -75,8 +78,8 @@ export default function NovoServicoTab({ clients }: { clients: Issue[] }) {
 
   function buildTitle(svc: string) {
     const label = serviceLabel(svc)
-    if (selectedClient) return `${label} — ${selectedClient.name}`
-    return label
+    const cliente = clienteIdentificacao.trim()
+    return cliente ? `${label} — ${cliente}` : label
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -113,6 +116,7 @@ export default function NovoServicoTab({ clients }: { clients: Issue[] }) {
     if (errors.length) setError(errors.join('\n'))
     if (results.length) {
       setServices(Object.fromEntries(FREE_TASKS.map(t => [t, false])))
+      setClienteIdentificacao('')
       setDescription('')
       setIaType('')
       setPabxNumbers('')
@@ -193,6 +197,21 @@ export default function NovoServicoTab({ clients }: { clients: Issue[] }) {
               ✓ Cliente selecionado: <strong>{selectedClient.name}</strong> ({selectedClient.key})
             </div>
           )}
+        </div>
+
+        {/* CNPJ / Instância */}
+        <div>
+          <label style={labelStyle}>CNPJ / Instância <span style={{ color: 'var(--c-err)' }}>*</span></label>
+          <input
+            type="text"
+            value={clienteIdentificacao}
+            onChange={e => setClienteIdentificacao(e.target.value)}
+            placeholder="Ex: 07952505000103 - drogariamaissaudeuba.atenderbem.com"
+            style={inputStyle}
+          />
+          <p style={{ fontSize: 11, color: 'var(--c-muted)', marginTop: 4 }}>
+            Será usado no título da issue no Jira. Preenchido automaticamente ao selecionar um cliente acima.
+          </p>
         </div>
 
         {/* Descrição */}
